@@ -20,7 +20,7 @@
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
                 <TextBlock Text="SubDL Subtitle Monitor" FontSize="28" FontWeight="SemiBold"/>
-                <TextBlock Margin="0,4,0,16" Foreground="DimGray" Text="Scan S01-S15, filter the returned subtitles, tick the rows you want, and save the returned ZIP files."/>
+                <TextBlock Margin="0,4,0,16" Foreground="DimGray" Text="Scan S01-S15, filter the returned subtitles by release name, tick the rows you want, and save the returned ZIP files."/>
             </StackPanel>
             <TextBlock Grid.Column="1" VerticalAlignment="Top" Foreground="DimGray" FontSize="11" Text="{Binding ReleaseLabel}"/>
         </Grid>
@@ -52,23 +52,23 @@
                 <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="SubDL Pro API key"/>
                 <StackPanel Grid.Column="1">
                     <TextBox x:Name="ApiKeyTextBox" MinHeight="34" VerticalContentAlignment="Center" ToolTip="Paste a replacement API key here. Leave blank to use the saved key."/>
-                    <TextBlock Margin="0,4,0,0" Foreground="DimGray" FontSize="11" Text="Up to 100 API rows are retained for each season S01-S15. Download control data remains available internally even when hidden from the results grid."/>
+                    <TextBlock Margin="0,4,0,0" Foreground="DimGray" FontSize="11" Text="Up to 100 API rows are retained for each season S01-S15. Package ID, download URL, field details and raw JSON remain retained internally."/>
                 </StackPanel>
             </Grid>
 
             <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="120"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Filter results"/>
+                <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Filter release name"/>
                 <TextBox x:Name="ResultsFilterTextBox"
                          Grid.Column="1"
                          MinHeight="34"
                          VerticalContentAlignment="Center"
                          TextChanged="ResultsFilterTextBox_TextChanged"
-                         ToolTip="Filter the current result rows. Searches both visible values and retained control/diagnostic data."/>
+                         ToolTip="Live free-text filter against release_name only."/>
             </Grid>
         </StackPanel>
 
-        <TextBlock Grid.Row="2" Margin="0,0,0,8" Foreground="DimGray" Text="The grid shows the working fields only. Package ID, download URL, field details and raw JSON remain retained in each result row and are included in filtering."/>
+        <TextBlock Grid.Row="2" Margin="0,0,0,8" Foreground="DimGray" Text="The result grid shows the working fields only. Hidden control and diagnostic data remain attached to each result row for the download flow."/>
 
         <DataGrid x:Name="SeasonPackGrid" Grid.Row="3" ItemsSource="{Binding RawRowsView}" AutoGenerateColumns="False" IsReadOnly="False" CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal" SelectionMode="Extended" EnableRowVirtualization="True">
             <DataGrid.Columns>
