@@ -13,7 +13,10 @@ public sealed class RawSubtitleRow : INotifyPropertyChanged
         int rowNumber,
         string kind,
         string httpStatus,
-        string subtitleId,
+        string packageId,
+        string subtitlePage,
+        string downloadUrl,
+        string downloadUrlDisplay,
         string releaseName,
         string sourceName,
         string seasonValue,
@@ -26,21 +29,27 @@ public sealed class RawSubtitleRow : INotifyPropertyChanged
         RowNumber = rowNumber;
         Kind = kind;
         HttpStatus = httpStatus;
-        SubtitleId = subtitleId;
+        PackageId = packageId;
+        SubtitlePage = subtitlePage;
+        DownloadUrl = downloadUrl;
+        DownloadUrlDisplay = downloadUrlDisplay;
         ReleaseName = releaseName;
         SourceName = sourceName;
         SeasonValue = seasonValue;
         EpisodeValue = episodeValue;
         Details = details;
         RawJson = rawJson;
-        _downloadStatus = downloadStatus ?? (IsDownloadable ? "Ready" : "—");
+        _downloadStatus = downloadStatus ?? (IsRawRow ? "Ready" : "—");
     }
 
     public int QuerySeason { get; }
     public int RowNumber { get; }
     public string Kind { get; }
     public string HttpStatus { get; }
-    public string SubtitleId { get; }
+    public string PackageId { get; }
+    public string SubtitlePage { get; }
+    public string DownloadUrl { get; }
+    public string DownloadUrlDisplay { get; }
     public string ReleaseName { get; }
     public string SourceName { get; }
     public string SeasonValue { get; }
@@ -49,7 +58,7 @@ public sealed class RawSubtitleRow : INotifyPropertyChanged
     public string RawJson { get; }
 
     public bool IsRawRow => Kind == "RAW";
-    public bool IsDownloadable => IsRawRow && !string.IsNullOrWhiteSpace(SubtitleId) && SubtitleId != "—";
+    public bool HasDownloadUrl => IsRawRow && !string.IsNullOrWhiteSpace(DownloadUrl) && DownloadUrl != "—";
 
     public bool IsSelected
     {
