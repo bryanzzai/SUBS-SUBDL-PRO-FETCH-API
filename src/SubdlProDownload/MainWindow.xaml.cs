@@ -19,7 +19,7 @@ public partial class MainWindow : Window
     public ObservableCollection<SeasonPackItem> SeasonPacks { get; } = [];
     public ObservableCollection<RawSubtitleRow> RawRows { get; } = [];
     public ICollectionView RawRowsView { get; }
-    public string ReleaseLabel => $"Release {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0"}";
+    public string ReleaseLabel => $"Release {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.1"}";
 
     public MainWindow()
     {
