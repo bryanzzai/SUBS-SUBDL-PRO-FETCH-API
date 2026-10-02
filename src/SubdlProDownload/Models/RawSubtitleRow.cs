@@ -21,6 +21,7 @@ public sealed class RawSubtitleRow : INotifyPropertyChanged
         string sourceName,
         string seasonValue,
         string episodeValue,
+        bool isHearingImpaired,
         string details,
         string rawJson,
         string? downloadStatus = null)
@@ -37,6 +38,7 @@ public sealed class RawSubtitleRow : INotifyPropertyChanged
         SourceName = sourceName;
         SeasonValue = seasonValue;
         EpisodeValue = episodeValue;
+        IsHearingImpaired = isHearingImpaired;
         Details = details;
         RawJson = rawJson;
         _downloadStatus = downloadStatus ?? (IsRawRow ? "Ready" : "—");
@@ -54,6 +56,8 @@ public sealed class RawSubtitleRow : INotifyPropertyChanged
     public string SourceName { get; }
     public string SeasonValue { get; }
     public string EpisodeValue { get; }
+    public bool IsHearingImpaired { get; }
+    public string HiDisplay => IsHearingImpaired ? "●" : string.Empty;
     public string Details { get; }
     public string RawJson { get; }
 
