@@ -16,7 +16,7 @@ public partial class MainWindow : Window
     public ObservableCollection<TitleCandidate> TitleCandidates { get; } = [];
     public ObservableCollection<SeasonPackItem> SeasonPacks { get; } = [];
     public ObservableCollection<RawSubtitleRow> RawRows { get; } = [];
-    public string ReleaseLabel => $"Release {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.6.1"}";
+    public string ReleaseLabel => $"Release {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.7.0"}";
 
     public MainWindow()
     {
@@ -56,11 +56,11 @@ public partial class MainWindow : Window
             TitleResultsComboBox.SelectedIndex = -1;
             RawRows.Clear();
             SeasonPacks.Clear();
-            CountTextBlock.Text = "0 diagnostic rows";
+            CountTextBlock.Text = "0 rows";
             ProgressBar.Value = 0;
             StatusTextBlock.Text = TitleCandidates.Count == 0
                 ? "No TV-series results found. Try a shorter title."
-                : $"Found {TitleCandidates.Count} TV-series result(s). Choose the correct one, then run the raw S01-S15 scan.";
+                : $"Found {TitleCandidates.Count} TV-series result(s). Choose the correct one, then run the S01-S15 scan.";
         }
         catch (OperationCanceledException) { StatusTextBlock.Text = "Title search cancelled."; }
         catch (Exception ex) { ShowError("SubDL title search failed", ex); }
@@ -76,7 +76,7 @@ public partial class MainWindow : Window
         }
 
         if (!TryGetSettings(out var settings, out var savingNewKey)) return;
-        BeginOperation($"Preparing raw S01-S15 scan for {title.Name}…");
+        BeginOperation($"Preparing S01-S15 scan for {title.Name}…");
         ProgressBar.Maximum = SubdlProClient.SeasonSearchLimit;
         ProgressBar.Value = 0;
         RawRows.Clear();
@@ -92,23 +92,24 @@ public partial class MainWindow : Window
                 ProgressBar.Maximum = update.TotalSeasons;
                 ProgressBar.Value = update.SeasonsCompleted;
                 StatusTextBlock.Text = update.ApiRowsFound is null
-                    ? $"Requesting raw season {update.SeasonNumber}/{update.TotalSeasons}…"
+                    ? $"Requesting season {update.SeasonNumber}/{update.TotalSeasons}…"
                     : $"Season {update.SeasonNumber}/{update.TotalSeasons}: API returned {update.ApiRowsFound} row(s).";
             });
 
             var rows = await client.SearchRawSeasonResultsAsync(title, progress, _operationCts.Token);
             foreach (var row in rows) RawRows.Add(row);
 
-            var summaryRows = RawRows.Count(row => row.Kind == "SUMMARY");
-            var rawRows = RawRows.Count(row => row.Kind == "RAW");
+            var rawRows = RawRows.Count(row => row.IsRawRow);
             var diagnosticRows = RawRows.Count - rawRows;
-            CountTextBlock.Text = $"{rawRows} raw rows + {diagnosticRows} diagnostics";
+            CountTextBlock.Text = diagnosticRows == 0
+                ? $"{rawRows} rows"
+                : $"{rawRows} rows + {diagnosticRows} diagnostics";
             ProgressBar.Maximum = SubdlProClient.SeasonSearchLimit;
             ProgressBar.Value = SubdlProClient.SeasonSearchLimit;
-            StatusTextBlock.Text = $"Raw scan complete: {summaryRows}/15 seasons returned a subtitles[] array. Tick any raw rows you want to test/download.";
+            StatusTextBlock.Text = $"Scan complete. {rawRows} subtitle row(s) shown; up to {SubdlProClient.RawRowsPerSeasonLimit} per season. Tick the packages you want to download.";
         }
-        catch (OperationCanceledException) { StatusTextBlock.Text = "Raw season scan cancelled."; }
-        catch (Exception ex) { ShowError("Raw SubDL scan failed", ex); }
+        catch (OperationCanceledException) { StatusTextBlock.Text = "Season scan cancelled."; }
+        catch (Exception ex) { ShowError("SubDL scan failed", ex); }
         finally { EndOperation(); }
     }
 
@@ -126,7 +127,7 @@ public partial class MainWindow : Window
         var selected = RawRows.Where(row => row.IsSelected && row.IsRawRow).ToArray();
         if (selected.Length == 0)
         {
-            ShowInfo("Tick one or more RAW subtitle rows first.", "Choose subtitles");
+            ShowInfo("Tick one or more subtitle rows first.", "Choose subtitles");
             return;
         }
 
@@ -155,12 +156,13 @@ public partial class MainWindow : Window
             {
                 var row = selected[index];
                 _operationCts.Token.ThrowIfCancellationRequested();
-                StatusTextBlock.Text = $"Processing {index + 1}/{selected.Length}: S{row.QuerySeason:00} row {row.RowNumber}";
+                var identity = row.PackageId != "—" ? row.PackageId : $"season {row.SeasonValue}";
+                StatusTextBlock.Text = $"Processing {index + 1}/{selected.Length}: {identity}";
 
-                if (!row.IsDownloadable)
+                if (!row.HasDownloadUrl)
                 {
                     failed++;
-                    row.DownloadStatus = "Cannot download: no recognized subtitle ID";
+                    row.DownloadStatus = "Cannot download: API returned no download URL";
                     ProgressBar.Value = index + 1;
                     continue;
                 }
@@ -168,14 +170,8 @@ public partial class MainWindow : Window
                 row.DownloadStatus = "Downloading ZIP…";
                 try
                 {
-                    var packageName = row.ReleaseName != "—" ? row.ReleaseName : row.SourceName;
-                    var pack = new SeasonPackItem(
-                        row.SubtitleId,
-                        $"Season {row.QuerySeason}",
-                        packageName,
-                        row.SourceName);
                     var destination = Path.Combine(outputFolder, BuildArchiveName(titleName, row));
-                    await client.DownloadSeasonPackAsync(pack, destination, _operationCts.Token);
+                    await client.DownloadReturnedUrlAsync(row.DownloadUrl, destination, _operationCts.Token);
                     row.DownloadStatus = "Saved ZIP";
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -189,7 +185,7 @@ public partial class MainWindow : Window
 
             StatusTextBlock.Text = failed == 0
                 ? $"Finished. Saved {selected.Length} ZIP file(s)."
-                : $"Finished. Saved {selected.Length - failed}; {failed} failed or lacked a recognized ID. See Download status for details.";
+                : $"Finished. Saved {selected.Length - failed}; {failed} failed. See Download status for details.";
         }
         catch (OperationCanceledException) { StatusTextBlock.Text = "ZIP download cancelled."; }
         catch (Exception ex) { ShowError("ZIP download failed", ex); }
@@ -200,7 +196,9 @@ public partial class MainWindow : Window
     {
         var release = row.ReleaseName != "—" ? row.ReleaseName : row.SourceName;
         var usefulRelease = string.IsNullOrWhiteSpace(release) || release == "—" ? "subtitle" : release;
-        var name = $"{titleName} S{row.QuerySeason:00} - {usefulRelease} - {row.SubtitleId}.zip";
+        var identity = string.IsNullOrWhiteSpace(row.PackageId) || row.PackageId == "—" ? "no-package-id" : row.PackageId;
+        var season = row.SeasonValue != "—" ? row.SeasonValue.PadLeft(2, '0') : row.QuerySeason.ToString("00");
+        var name = $"{titleName} S{season} - {usefulRelease} - {identity}.zip";
         var invalid = Path.GetInvalidFileNameChars();
         var sanitized = new string(name.Select(character => invalid.Contains(character) ? '_' : character).ToArray());
         return sanitized.Length <= 180 ? sanitized : sanitized[..176] + ".zip";
