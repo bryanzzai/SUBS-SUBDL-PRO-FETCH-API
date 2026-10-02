@@ -1,9 +1,9 @@
 <Window x:Class="SubdlProDownload.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="SubDL Season Pack Download - Diagnostic"
+        Title="SubDL Raw Subtitle Download"
         Height="900"
-        Width="1500"
+        Width="1550"
         MinHeight="700"
         MinWidth="1100"
         WindowStartupLocation="CenterScreen">
@@ -19,8 +19,8 @@
         <Grid Grid.Row="0">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
-                <TextBlock Text="SubDL Raw Season Scan" FontSize="28" FontWeight="SemiBold"/>
-                <TextBlock Margin="0,4,0,16" Foreground="DimGray" Text="Diagnostic build: scan S01-S15 and show raw API rows before filtering."/>
+                <TextBlock Text="SubDL Raw Subtitle Download" FontSize="28" FontWeight="SemiBold"/>
+                <TextBlock Margin="0,4,0,16" Foreground="DimGray" Text="Scan S01-S15, inspect up to 50 raw API rows per season, tick the rows you want, and save the returned ZIP files."/>
             </StackPanel>
             <TextBlock Grid.Column="1" VerticalAlignment="Top" Foreground="DimGray" FontSize="11" Text="{Binding ReleaseLabel}"/>
         </Grid>
@@ -43,8 +43,8 @@
             <Grid Margin="0,0,0,8">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="120"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Save ZIPs to"/>
-                <TextBox x:Name="OutputFolderTextBox" Grid.Column="1" MinHeight="34" VerticalContentAlignment="Center" Margin="0,0,8,0" IsEnabled="False" ToolTip="Disabled in diagnostic build."/>
-                <Button x:Name="BrowseOutputButton" Grid.Column="2" Padding="14,7" Content="Choose folder…" Click="BrowseOutputButton_Click" IsEnabled="False"/>
+                <TextBox x:Name="OutputFolderTextBox" Grid.Column="1" MinHeight="34" VerticalContentAlignment="Center" Margin="0,0,8,0"/>
+                <Button x:Name="BrowseOutputButton" Grid.Column="2" Padding="14,7" Content="Choose folder…" Click="BrowseOutputButton_Click"/>
             </Grid>
 
             <Grid>
@@ -52,26 +52,36 @@
                 <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="SubDL Pro API key"/>
                 <StackPanel Grid.Column="1">
                     <TextBox x:Name="ApiKeyTextBox" MinHeight="34" VerticalContentAlignment="Center" ToolTip="Paste a replacement API key here. Leave blank to use the saved key."/>
-                    <TextBlock Margin="0,4,0,0" Foreground="DimGray" FontSize="11" Text="No match mask, no deduplication and no Not found conversion. Up to 50 raw API rows are shown for each season S01-S15."/>
+                    <TextBlock Margin="0,4,0,0" Foreground="DimGray" FontSize="11" Text="No match mask, no deduplication and no Not found conversion. Up to 50 raw API rows are shown for each season S01-S15; tick any RAW row to download it."/>
                 </StackPanel>
             </Grid>
         </StackPanel>
 
-        <TextBlock Grid.Row="2" Margin="0,0,0,8" Foreground="DimGray" Text="Each season starts with a SUMMARY row. RAW rows are the API objects exactly as received, with selected fields broken out for readability."/>
+        <TextBlock Grid.Row="2" Margin="0,0,0,8" Foreground="DimGray" Text="SUMMARY rows describe each API response. RAW rows are selectable and can be downloaded using their subtitle ID."/>
 
-        <DataGrid x:Name="SeasonPackGrid" Grid.Row="3" ItemsSource="{Binding RawRows}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal" SelectionMode="Extended" EnableRowVirtualization="True">
+        <DataGrid x:Name="SeasonPackGrid" Grid.Row="3" ItemsSource="{Binding RawRows}" AutoGenerateColumns="False" IsReadOnly="False" CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal" SelectionMode="Extended" EnableRowVirtualization="True">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="Query season" Binding="{Binding QuerySeason}" Width="90"/>
-                <DataGridTextColumn Header="#" Binding="{Binding RowNumber}" Width="50"/>
-                <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="105"/>
-                <DataGridTextColumn Header="HTTP" Binding="{Binding HttpStatus}" Width="105"/>
-                <DataGridTextColumn Header="ID" Binding="{Binding SubtitleId}" Width="145"/>
-                <DataGridTextColumn Header="release_name" Binding="{Binding ReleaseName}" Width="2.2*"/>
-                <DataGridTextColumn Header="name / file_name" Binding="{Binding SourceName}" Width="2.0*"/>
-                <DataGridTextColumn Header="season" Binding="{Binding SeasonValue}" Width="70"/>
-                <DataGridTextColumn Header="episode" Binding="{Binding EpisodeValue}" Width="75"/>
-                <DataGridTextColumn Header="Details / fields" Binding="{Binding Details}" Width="2.1*"/>
-                <DataGridTextColumn Header="Raw JSON" Binding="{Binding RawJson}" Width="3.0*"/>
+                <DataGridTemplateColumn Header="Download" Width="85">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      IsEnabled="{Binding IsDownloadable}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Query season" Binding="{Binding QuerySeason}" Width="90" IsReadOnly="True"/>
+                <DataGridTextColumn Header="#" Binding="{Binding RowNumber}" Width="50" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="105" IsReadOnly="True"/>
+                <DataGridTextColumn Header="HTTP" Binding="{Binding HttpStatus}" Width="105" IsReadOnly="True"/>
+                <DataGridTextColumn Header="ID" Binding="{Binding SubtitleId}" Width="145" IsReadOnly="True"/>
+                <DataGridTextColumn Header="release_name" Binding="{Binding ReleaseName}" Width="2.2*" IsReadOnly="True"/>
+                <DataGridTextColumn Header="name / file_name" Binding="{Binding SourceName}" Width="2.0*" IsReadOnly="True"/>
+                <DataGridTextColumn Header="season" Binding="{Binding SeasonValue}" Width="70" IsReadOnly="True"/>
+                <DataGridTextColumn Header="episode" Binding="{Binding EpisodeValue}" Width="75" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Download status" Binding="{Binding DownloadStatus}" Width="150" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Details / fields" Binding="{Binding Details}" Width="2.1*" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Raw JSON" Binding="{Binding RawJson}" Width="3.0*" IsReadOnly="True"/>
             </DataGrid.Columns>
         </DataGrid>
 
@@ -83,7 +93,7 @@
             </StackPanel>
             <TextBlock x:Name="CountTextBlock" Grid.Column="1" Margin="16,0" VerticalAlignment="Center" Foreground="DimGray" Text="0 diagnostic rows"/>
             <StackPanel Grid.Column="2" Orientation="Horizontal">
-                <Button x:Name="DownloadButton" Visibility="Collapsed" Padding="14,6" Margin="0,0,8,0" Content="Download selected ZIPs" Click="DownloadButton_Click" IsEnabled="False"/>
+                <Button x:Name="DownloadButton" Padding="14,6" Margin="0,0,8,0" Content="Download selected ZIPs" Click="DownloadButton_Click" IsEnabled="False"/>
                 <Button x:Name="CancelButton" Padding="14,6" Content="Cancel" IsEnabled="False" Click="CancelButton_Click"/>
             </StackPanel>
         </Grid>
