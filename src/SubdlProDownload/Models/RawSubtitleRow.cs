@@ -48,16 +48,13 @@ public sealed class RawSubtitleRow : INotifyPropertyChanged
     public string Details { get; }
     public string RawJson { get; }
 
-    public bool IsDownloadable => Kind == "RAW" && !string.IsNullOrWhiteSpace(SubtitleId) && SubtitleId != "—";
+    public bool IsRawRow => Kind == "RAW";
+    public bool IsDownloadable => IsRawRow && !string.IsNullOrWhiteSpace(SubtitleId) && SubtitleId != "—";
 
     public bool IsSelected
     {
         get => _isSelected;
-        set
-        {
-            if (!IsDownloadable) value = false;
-            SetField(ref _isSelected, value);
-        }
+        set => SetField(ref _isSelected, IsRawRow && value);
     }
 
     public string DownloadStatus
