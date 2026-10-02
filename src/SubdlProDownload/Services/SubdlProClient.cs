@@ -9,7 +9,7 @@ using SubdlProDownload.Models;
 
 namespace SubdlProDownload.Services;
 
-/// <summary>Direct SubDL client for title lookup, raw season monitoring and returned-URL ZIP downloads.</summary>
+/// <summary>Direct SubDL client for title lookup, raw season monitoring, quota inspection and returned-URL ZIP downloads.</summary>
 public sealed class SubdlProClient : IAsyncDisposable
 {
     public const int SeasonSearchLimit = 15;
@@ -27,6 +27,37 @@ public sealed class SubdlProClient : IAsyncDisposable
         if (!_settings.HasApiKey)
             throw new InvalidOperationException("Paste your SubDL Pro API key into the field above, then start the search.");
         return VerifyCredentialsAsync(cancellationToken);
+    }
+
+    public async Task<SubdlAccountUsage> GetAccountUsageAsync(CancellationToken cancellationToken)
+    {
+        using var request = CreateRequest(HttpMethod.Get, new Uri(ApiBase, "me"));
+        using var response = await _client.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        var root = document.RootElement;
+
+        if (!root.TryGetProperty("usage", out var usage) || usage.ValueKind != JsonValueKind.Object)
+            throw new InvalidOperationException("SubDL /me response did not contain usage data.");
+
+        var planName = root.TryGetProperty("plan", out var plan) && plan.ValueKind == JsonValueKind.Object
+            ? GetString(plan, "name") ?? "Unknown"
+            : "Unknown";
+        var isPro = root.TryGetProperty("plan", out plan)
+            && plan.ValueKind == JsonValueKind.Object
+            && plan.TryGetProperty("is_pro", out var isProValue)
+            && isProValue.ValueKind == JsonValueKind.True;
+
+        return new SubdlAccountUsage(
+            planName,
+            isPro,
+            GetUsageInt(usage, "search", "used"),
+            GetUsageInt(usage, "search", "limit"),
+            GetUsageInt(usage, "search", "remaining"),
+            GetUsageInt(usage, "downloads", "used"),
+            GetUsageInt(usage, "downloads", "limit"),
+            GetUsageInt(usage, "downloads", "remaining"));
     }
 
     public async Task<IReadOnlyList<TitleCandidate>> SearchTitlesAsync(string query, CancellationToken cancellationToken)
@@ -280,6 +311,15 @@ public sealed class SubdlProClient : IAsyncDisposable
         return match.Success ? Uri.UnescapeDataString(match.Groups["id"].Value) : null;
     }
 
+    private static int GetUsageInt(JsonElement usage, string bucketName, string fieldName)
+    {
+        if (!usage.TryGetProperty(bucketName, out var bucket) || bucket.ValueKind != JsonValueKind.Object)
+            throw new InvalidOperationException($"SubDL /me response did not contain usage.{bucketName}.");
+        if (!bucket.TryGetProperty(fieldName, out var field) || field.ValueKind != JsonValueKind.Number || !field.TryGetInt32(out var value))
+            throw new InvalidOperationException($"SubDL /me response did not contain numeric usage.{bucketName}.{fieldName}.");
+        return value;
+    }
+
     private static string MaskApiKey(string value)
     {
         if (string.IsNullOrEmpty(value)) return value;
@@ -304,3 +344,13 @@ public sealed record RawSeasonSearchProgress(
     int SeasonsCompleted,
     int TotalSeasons,
     int? ApiRowsFound);
+
+public sealed record SubdlAccountUsage(
+    string PlanName,
+    bool IsPro,
+    int SearchUsed,
+    int SearchLimit,
+    int SearchRemaining,
+    int DownloadsUsed,
+    int DownloadsLimit,
+    int DownloadsRemaining);
