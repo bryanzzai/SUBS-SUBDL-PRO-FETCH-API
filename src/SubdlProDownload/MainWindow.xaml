@@ -61,12 +61,13 @@
 
         <DataGrid x:Name="SeasonPackGrid" Grid.Row="3" ItemsSource="{Binding RawRows}" AutoGenerateColumns="False" IsReadOnly="False" CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal" SelectionMode="Extended" EnableRowVirtualization="True">
             <DataGrid.Columns>
-                <DataGridTemplateColumn Header="Download" Width="85">
+                <DataGridTemplateColumn Header="Download" Width="85" IsReadOnly="False">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center"
                                       IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                      IsEnabled="{Binding IsDownloadable}"/>
+                                      IsEnabled="{Binding IsRawRow}"
+                                      Click="DownloadCheckBox_Click"/>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
