@@ -1,11 +1,11 @@
 <Window x:Class="SubdlProDownload.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="SubDL Season Pack Download"
-        Height="720"
-        Width="1120"
-        MinHeight="620"
-        MinWidth="850"
+        Title="SubDL Season Pack Download - Diagnostic"
+        Height="900"
+        Width="1500"
+        MinHeight="700"
+        MinWidth="1100"
         WindowStartupLocation="CenterScreen">
     <Grid Margin="20">
         <Grid.RowDefinitions>
@@ -15,69 +15,75 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
+
         <Grid Grid.Row="0">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
-                <TextBlock Text="SubDL Season Pack Download" FontSize="28" FontWeight="SemiBold"/>
-                <TextBlock Margin="0,4,0,16" Foreground="DimGray" Text="Find an English season package, choose it yourself, and save the original ZIP files."/>
+                <TextBlock Text="SubDL Raw Season Scan" FontSize="28" FontWeight="SemiBold"/>
+                <TextBlock Margin="0,4,0,16" Foreground="DimGray" Text="Diagnostic build: scan S01-S15 and show raw API rows before filtering."/>
             </StackPanel>
             <TextBlock Grid.Column="1" VerticalAlignment="Top" Foreground="DimGray" FontSize="11" Text="{Binding ReleaseLabel}"/>
         </Grid>
+
         <StackPanel Grid.Row="1" Margin="0,0,0,12">
             <Grid Margin="0,0,0,8">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="120"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Series title"/>
-                <TextBox x:Name="TitleSearchTextBox" Grid.Column="1" MinHeight="34" VerticalContentAlignment="Center" Margin="0,0,8,0" ToolTip="For example: Evil"/>
+                <TextBox x:Name="TitleSearchTextBox" Grid.Column="1" MinHeight="34" VerticalContentAlignment="Center" Margin="0,0,8,0" ToolTip="For example: Justified"/>
                 <Button x:Name="SearchTitlesButton" Grid.Column="2" Padding="14,7" Content="Search SubDL" Click="SearchTitlesButton_Click"/>
             </Grid>
+
             <Grid Margin="0,0,0,8">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="120"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="SubDL title"/>
                 <ComboBox x:Name="TitleResultsComboBox" Grid.Column="1" MinHeight="34" Margin="0,0,8,0" ItemsSource="{Binding TitleCandidates}" DisplayMemberPath="DisplayName" ToolTip="Choose the actual TV series from SubDL's results."/>
-                <Button x:Name="FindPacksButton" Grid.Column="2" Padding="14,7" Content="Search all seasons" Click="FindPacksButton_Click"/>
+                <Button x:Name="FindPacksButton" Grid.Column="2" Padding="14,7" Content="Raw scan S01-S15" Click="FindPacksButton_Click"/>
             </Grid>
+
             <Grid Margin="0,0,0,8">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="120"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Save ZIPs to"/>
-                <TextBox x:Name="OutputFolderTextBox" Grid.Column="1" MinHeight="34" VerticalContentAlignment="Center" Margin="0,0,8,0"/>
-                <Button x:Name="BrowseOutputButton" Grid.Column="2" Padding="14,7" Content="Choose folder…" Click="BrowseOutputButton_Click"/>
+                <TextBox x:Name="OutputFolderTextBox" Grid.Column="1" MinHeight="34" VerticalContentAlignment="Center" Margin="0,0,8,0" IsEnabled="False" ToolTip="Disabled in diagnostic build."/>
+                <Button x:Name="BrowseOutputButton" Grid.Column="2" Padding="14,7" Content="Choose folder…" Click="BrowseOutputButton_Click" IsEnabled="False"/>
             </Grid>
+
             <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="120"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="SubDL Pro API key"/>
                 <StackPanel Grid.Column="1">
                     <TextBox x:Name="ApiKeyTextBox" MinHeight="34" VerticalContentAlignment="Center" ToolTip="Paste a replacement API key here. Leave blank to use the saved key."/>
-                    <TextBlock Margin="0,4,0,0" Foreground="DimGray" FontSize="11" Text="Search → choose the real series → scan S01 through S15 using title.sNN. masks → tick the packages you want → download."/>
+                    <TextBlock Margin="0,4,0,0" Foreground="DimGray" FontSize="11" Text="No match mask, no deduplication and no Not found conversion. Up to 50 raw API rows are shown for each season S01-S15."/>
                 </StackPanel>
             </Grid>
         </StackPanel>
-        <TextBlock Grid.Row="2" Margin="0,0,0,8" Foreground="DimGray" Text="SubDL results matching the generated title.sNN. mask. Tick the packages to keep; each one is saved as a ZIP and never unpacked."/>
-        <DataGrid x:Name="SeasonPackGrid" Grid.Row="3" ItemsSource="{Binding SeasonPacks}" AutoGenerateColumns="False" IsReadOnly="False" CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal" SelectionMode="Extended">
+
+        <TextBlock Grid.Row="2" Margin="0,0,0,8" Foreground="DimGray" Text="Each season starts with a SUMMARY row. RAW rows are the API objects exactly as received, with selected fields broken out for readability."/>
+
+        <DataGrid x:Name="SeasonPackGrid" Grid.Row="3" ItemsSource="{Binding RawRows}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal" SelectionMode="Extended" EnableRowVirtualization="True">
             <DataGrid.Columns>
-                <DataGridTemplateColumn Header="Download" Width="90">
-                    <DataGridTemplateColumn.CellTemplate>
-                        <DataTemplate>
-                            <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center"
-                                      IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                      IsEnabled="{Binding IsDownloadable}"/>
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Season" Binding="{Binding SeasonLabel}" Width="120" IsReadOnly="True"/>
-                <DataGridTextColumn Header="Package / release" Binding="{Binding PackageName}" Width="2.6*" IsReadOnly="True"/>
-                <DataGridTextColumn Header="Source file" Binding="{Binding SourceFileName}" Width="2.1*" IsReadOnly="True"/>
-                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="1.4*" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Query season" Binding="{Binding QuerySeason}" Width="90"/>
+                <DataGridTextColumn Header="#" Binding="{Binding RowNumber}" Width="50"/>
+                <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="105"/>
+                <DataGridTextColumn Header="HTTP" Binding="{Binding HttpStatus}" Width="105"/>
+                <DataGridTextColumn Header="ID" Binding="{Binding SubtitleId}" Width="145"/>
+                <DataGridTextColumn Header="release_name" Binding="{Binding ReleaseName}" Width="2.2*"/>
+                <DataGridTextColumn Header="name / file_name" Binding="{Binding SourceName}" Width="2.0*"/>
+                <DataGridTextColumn Header="season" Binding="{Binding SeasonValue}" Width="70"/>
+                <DataGridTextColumn Header="episode" Binding="{Binding EpisodeValue}" Width="75"/>
+                <DataGridTextColumn Header="Details / fields" Binding="{Binding Details}" Width="2.1*"/>
+                <DataGridTextColumn Header="Raw JSON" Binding="{Binding RawJson}" Width="3.0*"/>
             </DataGrid.Columns>
         </DataGrid>
+
         <Grid Grid.Row="4" Margin="0,14,0,0">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
                 <TextBlock x:Name="StatusTextBlock" Text="Search for a TV series to begin."/>
-                <ProgressBar x:Name="ProgressBar" Margin="0,6,12,0" Height="6" Minimum="0" Maximum="1" Value="0"/>
+                <ProgressBar x:Name="ProgressBar" Margin="0,6,12,0" Height="6" Minimum="0" Maximum="15" Value="0"/>
             </StackPanel>
-            <TextBlock x:Name="CountTextBlock" Grid.Column="1" Margin="16,0" VerticalAlignment="Center" Foreground="DimGray" Text="0 packages"/>
+            <TextBlock x:Name="CountTextBlock" Grid.Column="1" Margin="16,0" VerticalAlignment="Center" Foreground="DimGray" Text="0 diagnostic rows"/>
             <StackPanel Grid.Column="2" Orientation="Horizontal">
-                <Button x:Name="DownloadButton" Padding="14,6" Margin="0,0,8,0" Content="Download selected ZIPs" Click="DownloadButton_Click"/>
+                <Button x:Name="DownloadButton" Visibility="Collapsed" Padding="14,6" Margin="0,0,8,0" Content="Download selected ZIPs" Click="DownloadButton_Click" IsEnabled="False"/>
                 <Button x:Name="CancelButton" Padding="14,6" Content="Cancel" IsEnabled="False" Click="CancelButton_Click"/>
             </StackPanel>
         </Grid>
