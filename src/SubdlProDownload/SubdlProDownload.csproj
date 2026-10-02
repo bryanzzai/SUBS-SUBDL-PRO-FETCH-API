@@ -7,8 +7,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>SubdlProDownload</RootNamespace>
-    <AssemblyName>SubdlProDownload</AssemblyName>
-    <Version>1.0.1</Version>
+    <AssemblyName>subdl-bulk-download</AssemblyName>
+    <Version>0.1.0</Version>
   </PropertyGroup>
 
 </Project>
