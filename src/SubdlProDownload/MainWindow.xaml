@@ -20,7 +20,7 @@
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
                 <TextBlock Text="SubDL Subtitle Monitor" FontSize="28" FontWeight="SemiBold"/>
-                <TextBlock Margin="0,4,0,16" Foreground="DimGray" Text="Scan S01-S15, inspect SubDL package controls, tick the rows you want, and save the returned ZIP files."/>
+                <TextBlock Margin="0,4,0,16" Foreground="DimGray" Text="Scan S01-S15, filter the returned subtitles, tick the rows you want, and save the returned ZIP files."/>
             </StackPanel>
             <TextBlock Grid.Column="1" VerticalAlignment="Top" Foreground="DimGray" FontSize="11" Text="{Binding ReleaseLabel}"/>
         </Grid>
@@ -47,19 +47,30 @@
                 <Button x:Name="BrowseOutputButton" Grid.Column="2" Padding="14,7" Content="Choose folder…" Click="BrowseOutputButton_Click"/>
             </Grid>
 
-            <Grid>
+            <Grid Margin="0,0,0,8">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="120"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="SubDL Pro API key"/>
                 <StackPanel Grid.Column="1">
                     <TextBox x:Name="ApiKeyTextBox" MinHeight="34" VerticalContentAlignment="Center" ToolTip="Paste a replacement API key here. Leave blank to use the saved key."/>
-                    <TextBlock Margin="0,4,0,0" Foreground="DimGray" FontSize="11" Text="Up to 50 API rows are shown for each season S01-S15. Package ID and Download URL are the monitored controls used by the download flow."/>
+                    <TextBlock Margin="0,4,0,0" Foreground="DimGray" FontSize="11" Text="Up to 100 API rows are retained for each season S01-S15. Download control data remains available internally even when hidden from the results grid."/>
                 </StackPanel>
+            </Grid>
+
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="120"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Filter results"/>
+                <TextBox x:Name="ResultsFilterTextBox"
+                         Grid.Column="1"
+                         MinHeight="34"
+                         VerticalContentAlignment="Center"
+                         TextChanged="ResultsFilterTextBox_TextChanged"
+                         ToolTip="Filter the current result rows. Searches both visible values and retained control/diagnostic data."/>
             </Grid>
         </StackPanel>
 
-        <TextBlock Grid.Row="2" Margin="0,0,0,8" Foreground="DimGray" Text="Package ID is derived from subtitlePage. Download URL is returned by SubDL and displayed with the API key masked; the full value is retained internally for download."/>
+        <TextBlock Grid.Row="2" Margin="0,0,0,8" Foreground="DimGray" Text="The grid shows the working fields only. Package ID, download URL, field details and raw JSON remain retained in each result row and are included in filtering."/>
 
-        <DataGrid x:Name="SeasonPackGrid" Grid.Row="3" ItemsSource="{Binding RawRows}" AutoGenerateColumns="False" IsReadOnly="False" CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal" SelectionMode="Extended" EnableRowVirtualization="True">
+        <DataGrid x:Name="SeasonPackGrid" Grid.Row="3" ItemsSource="{Binding RawRowsView}" AutoGenerateColumns="False" IsReadOnly="False" CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal" SelectionMode="Extended" EnableRowVirtualization="True">
             <DataGrid.Columns>
                 <DataGridTemplateColumn Header="Download" Width="85" IsReadOnly="False">
                     <DataGridTemplateColumn.CellTemplate>
@@ -71,14 +82,10 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="release_name" Binding="{Binding ReleaseName}" Width="2.4*" IsReadOnly="True"/>
-                <DataGridTextColumn Header="season" Binding="{Binding SeasonValue}" Width="70" IsReadOnly="True"/>
-                <DataGridTextColumn Header="episode" Binding="{Binding EpisodeValue}" Width="75" IsReadOnly="True"/>
-                <DataGridTextColumn Header="Package ID" Binding="{Binding PackageId}" Width="145" IsReadOnly="True"/>
-                <DataGridTextColumn Header="Download URL" Binding="{Binding DownloadUrlDisplay}" Width="2.5*" IsReadOnly="True"/>
-                <DataGridTextColumn Header="Download status" Binding="{Binding DownloadStatus}" Width="175" IsReadOnly="True"/>
-                <DataGridTextColumn Header="Details / fields" Binding="{Binding Details}" Width="2.1*" IsReadOnly="True"/>
-                <DataGridTextColumn Header="Raw JSON" Binding="{Binding RawJson}" Width="3.0*" IsReadOnly="True"/>
+                <DataGridTextColumn Header="release_name" Binding="{Binding ReleaseName}" Width="*" IsReadOnly="True"/>
+                <DataGridTextColumn Header="season" Binding="{Binding SeasonValue}" Width="90" IsReadOnly="True"/>
+                <DataGridTextColumn Header="episode" Binding="{Binding EpisodeValue}" Width="90" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Download status" Binding="{Binding DownloadStatus}" Width="220" IsReadOnly="True"/>
             </DataGrid.Columns>
         </DataGrid>
 
