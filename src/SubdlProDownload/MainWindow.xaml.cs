@@ -15,7 +15,8 @@ public partial class MainWindow : Window
 
     public ObservableCollection<TitleCandidate> TitleCandidates { get; } = [];
     public ObservableCollection<SeasonPackItem> SeasonPacks { get; } = [];
-    public string ReleaseLabel => $"Release {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.4.0"}";
+    public ObservableCollection<RawSubtitleRow> RawRows { get; } = [];
+    public string ReleaseLabel => $"Release {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.5.0"}";
 
     public MainWindow()
     {
@@ -37,7 +38,7 @@ public partial class MainWindow : Window
         var query = TitleSearchTextBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(query))
         {
-            ShowInfo("Enter a series title first, for example Evil.", "Search SubDL");
+            ShowInfo("Enter a series title first, for example Justified.", "Search SubDL");
             return;
         }
 
@@ -53,12 +54,13 @@ public partial class MainWindow : Window
             TitleCandidates.Clear();
             foreach (var candidate in candidates.Where(candidate => candidate.IsTvSeries)) TitleCandidates.Add(candidate);
             TitleResultsComboBox.SelectedIndex = -1;
+            RawRows.Clear();
             SeasonPacks.Clear();
-            CountTextBlock.Text = "0 packages";
+            CountTextBlock.Text = "0 diagnostic rows";
             ProgressBar.Value = 0;
             StatusTextBlock.Text = TitleCandidates.Count == 0
                 ? "No TV-series results found. Try a shorter title."
-                : $"Found {TitleCandidates.Count} TV-series result(s). Choose the correct one, then search its 15 season lists.";
+                : $"Found {TitleCandidates.Count} TV-series result(s). Choose the correct one, then run the raw S01-S15 scan.";
         }
         catch (OperationCanceledException) { StatusTextBlock.Text = "Title search cancelled."; }
         catch (Exception ex) { ShowError("SubDL title search failed", ex); }
@@ -74,34 +76,39 @@ public partial class MainWindow : Window
         }
 
         if (!TryGetSettings(out var settings, out var savingNewKey)) return;
-        BeginOperation($"Preparing 15 English season searches for {title.Name}…");
+        BeginOperation($"Preparing raw S01-S15 scan for {title.Name}…");
         ProgressBar.Maximum = SubdlProClient.SeasonSearchLimit;
         ProgressBar.Value = 0;
+        RawRows.Clear();
+
         try
         {
             await using var client = new SubdlProClient(settings);
             await client.InitializeAsync(_operationCts!.Token);
             SaveVerifiedKeyIfNeeded(settings, savingNewKey);
-            var progress = new Progress<SeasonSearchProgress>(update =>
+
+            var progress = new Progress<RawSeasonSearchProgress>(update =>
             {
                 ProgressBar.Maximum = update.TotalSeasons;
                 ProgressBar.Value = update.SeasonsCompleted;
-                StatusTextBlock.Text = update.MatchesFound is null
-                    ? $"Searching season {update.SeasonNumber}/{update.TotalSeasons}: {update.Mask}"
-                    : $"Season {update.SeasonNumber}/{update.TotalSeasons}: {update.MatchesFound} matching package(s).";
+                StatusTextBlock.Text = update.ApiRowsFound is null
+                    ? $"Requesting raw season {update.SeasonNumber}/{update.TotalSeasons}…"
+                    : $"Season {update.SeasonNumber}/{update.TotalSeasons}: API returned {update.ApiRowsFound} row(s).";
             });
-            var packs = await client.SearchSeasonPacksAsync(title, progress, _operationCts.Token);
-            SeasonPacks.Clear();
-            foreach (var pack in packs) SeasonPacks.Add(pack);
-            CountTextBlock.Text = $"{SeasonPacks.Count} packages";
-            ProgressBar.Maximum = Math.Max(SeasonPacks.Count, 1);
-            ProgressBar.Value = SeasonPacks.Count;
-            StatusTextBlock.Text = SeasonPacks.Count == 0
-                ? $"No package names matched {SubdlProClient.BuildSeasonMask(title.Name, 1)} through S15."
-                : $"Found {SeasonPacks.Count} package(s) matching the title.sNN. masks. Tick the ZIP files you want to save.";
+
+            var rows = await client.SearchRawSeasonResultsAsync(title, progress, _operationCts.Token);
+            foreach (var row in rows) RawRows.Add(row);
+
+            var summaryRows = RawRows.Count(row => row.Kind == "SUMMARY");
+            var rawRows = RawRows.Count(row => row.Kind == "RAW");
+            var diagnosticRows = RawRows.Count - rawRows;
+            CountTextBlock.Text = $"{rawRows} raw rows + {diagnosticRows} diagnostics";
+            ProgressBar.Maximum = SubdlProClient.SeasonSearchLimit;
+            ProgressBar.Value = SubdlProClient.SeasonSearchLimit;
+            StatusTextBlock.Text = $"Raw scan complete: {summaryRows}/15 seasons returned a subtitles[] array. Up to {SubdlProClient.RawRowsPerSeasonLimit} rows per season are shown without filtering.";
         }
-        catch (OperationCanceledException) { StatusTextBlock.Text = "Season-pack search cancelled."; }
-        catch (Exception ex) { ShowError("Finding season packs failed", ex); }
+        catch (OperationCanceledException) { StatusTextBlock.Text = "Raw season scan cancelled."; }
+        catch (Exception ex) { ShowError("Raw SubDL scan failed", ex); }
         finally { EndOperation(); }
     }
 
@@ -110,23 +117,14 @@ public partial class MainWindow : Window
         var selected = SeasonPacks.Where(pack => pack.IsSelected && pack.IsDownloadable).ToArray();
         if (selected.Length == 0)
         {
-            ShowInfo("Tick one or more season packages first.", "Choose packages");
+            ShowInfo("Download is intentionally hidden in the 0.5.0 diagnostic build.", "Diagnostic build");
             return;
         }
 
         var outputFolder = OutputFolderTextBox.Text.Trim();
-        if (string.IsNullOrWhiteSpace(outputFolder))
-        {
-            ShowInfo("Choose a folder where the ZIP packages should be saved.", "Choose destination folder");
-            return;
-        }
-
+        if (string.IsNullOrWhiteSpace(outputFolder)) return;
         if (!TryGetSettings(out var settings, out var savingNewKey)) return;
-        BeginOperation($"Checking SubDL Pro credentials… 0/{selected.Length}");
-        ProgressBar.Maximum = selected.Length;
-        ProgressBar.Value = 0;
-        var failed = 0;
-
+        BeginOperation("Checking SubDL Pro credentials…");
         try
         {
             Directory.CreateDirectory(outputFolder);
@@ -134,28 +132,11 @@ public partial class MainWindow : Window
             await client.InitializeAsync(_operationCts!.Token);
             SaveVerifiedKeyIfNeeded(settings, savingNewKey);
             var titleName = (TitleResultsComboBox.SelectedItem as TitleCandidate)?.Name ?? "SubDL";
-            for (var index = 0; index < selected.Length; index++)
+            foreach (var pack in selected)
             {
-                var pack = selected[index];
-                _operationCts.Token.ThrowIfCancellationRequested();
-                pack.Status = "Downloading ZIP…";
-                StatusTextBlock.Text = $"Downloading {index + 1}/{selected.Length}: {pack.SeasonLabel}";
-                try
-                {
-                    var destination = Path.Combine(outputFolder, BuildArchiveName(titleName, pack));
-                    await client.DownloadSeasonPackAsync(pack, destination, _operationCts.Token);
-                    pack.Status = "Saved ZIP";
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    failed++;
-                    pack.Status = "Failed: " + ex.Message;
-                }
-                ProgressBar.Value = index + 1;
+                var destination = Path.Combine(outputFolder, BuildArchiveName(titleName, pack));
+                await client.DownloadSeasonPackAsync(pack, destination, _operationCts.Token);
             }
-            StatusTextBlock.Text = failed == 0
-                ? $"Finished. Saved {selected.Length} ZIP package(s)."
-                : $"Finished. Saved {selected.Length - failed}; {failed} failed.";
         }
         catch (OperationCanceledException) { StatusTextBlock.Text = "ZIP download cancelled."; }
         catch (Exception ex) { ShowError("ZIP download failed", ex); }
@@ -208,7 +189,7 @@ public partial class MainWindow : Window
     {
         SearchTitlesButton.IsEnabled = true;
         FindPacksButton.IsEnabled = true;
-        DownloadButton.IsEnabled = true;
+        DownloadButton.IsEnabled = false;
         BrowseOutputButton.IsEnabled = true;
         TitleSearchTextBox.IsEnabled = true;
         TitleResultsComboBox.IsEnabled = true;
@@ -220,6 +201,7 @@ public partial class MainWindow : Window
     }
 
     private void ShowInfo(string message, string title) => MessageBox.Show(this, message, title, MessageBoxButton.OK, MessageBoxImage.Information);
+
     private void ShowError(string title, Exception ex)
     {
         StatusTextBlock.Text = title + ".";
