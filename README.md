@@ -2,17 +2,19 @@
 
 Windows desktop app for downloading **English season subtitle packages as ZIP files** through a user's own [SubDL Pro](https://subdl.com/) API key.
 
-## Release 0.3.0: one small, manual workflow
+## Release 0.4.0: fixed S01–S15 search
 
 This release deliberately does only this:
 
 1. Search SubDL for a TV-series title, for example `Evil`.
 2. Choose the actual series from the results dropdown.
-3. Ask SubDL which English full-season packages are available.
-4. Tick the packages you want in the large result list.
-5. Choose an output folder and download the selected ZIP files.
+3. Search the normal English subtitle list for **every season S01 through S15**.
+4. Keep only entries whose release name matches the generated title mask—for example `justified.s01.`.
+5. Show an explicit **Not found** row for every season without a matching package.
+6. Tick the packages you want in the large result list.
+7. Choose an output folder and download the selected ZIP files.
 
-Nothing is guessed from local video filenames. There is no library scan, episode matching, automatic extraction, or `.srt` sidecar creation in this version. Each selected package is retained exactly as a `.zip` file in the chosen folder.
+Nothing is guessed from local video filenames or a show's canonical season count. There is no library scan, episode matching, automatic extraction, or `.srt` sidecar creation in this version. Each selected package is retained exactly as a `.zip` file in the chosen folder.
 
 SubDL's API supports TV-title search, `full_season=1` subtitle searches, and ZIP-format downloads; this app uses those three operations directly.
 

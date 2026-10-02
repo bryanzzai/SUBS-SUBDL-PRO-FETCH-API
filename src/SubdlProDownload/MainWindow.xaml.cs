@@ -15,7 +15,7 @@ public partial class MainWindow : Window
 
     public ObservableCollection<TitleCandidate> TitleCandidates { get; } = [];
     public ObservableCollection<SeasonPackItem> SeasonPacks { get; } = [];
-    public string ReleaseLabel => $"Release {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.3.0"}";
+    public string ReleaseLabel => $"Release {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.4.0"}";
 
     public MainWindow()
     {
@@ -58,7 +58,7 @@ public partial class MainWindow : Window
             ProgressBar.Value = 0;
             StatusTextBlock.Text = TitleCandidates.Count == 0
                 ? "No TV-series results found. Try a shorter title."
-                : $"Found {TitleCandidates.Count} TV-series result(s). Choose the correct one, then find its season packs.";
+                : $"Found {TitleCandidates.Count} TV-series result(s). Choose the correct one, then search its 15 season lists.";
         }
         catch (OperationCanceledException) { StatusTextBlock.Text = "Title search cancelled."; }
         catch (Exception ex) { ShowError("SubDL title search failed", ex); }
@@ -74,21 +74,31 @@ public partial class MainWindow : Window
         }
 
         if (!TryGetSettings(out var settings, out var savingNewKey)) return;
-        BeginOperation($"Finding English season packs for {title.Name}…");
+        BeginOperation($"Preparing 15 English season searches for {title.Name}…");
+        ProgressBar.Maximum = SubdlProClient.SeasonSearchLimit;
+        ProgressBar.Value = 0;
         try
         {
             await using var client = new SubdlProClient(settings);
             await client.InitializeAsync(_operationCts!.Token);
             SaveVerifiedKeyIfNeeded(settings, savingNewKey);
-            var packs = await client.SearchSeasonPacksAsync(title, _operationCts.Token);
+            var progress = new Progress<SeasonSearchProgress>(update =>
+            {
+                ProgressBar.Maximum = update.TotalSeasons;
+                ProgressBar.Value = update.SeasonsCompleted;
+                StatusTextBlock.Text = update.MatchesFound is null
+                    ? $"Searching season {update.SeasonNumber}/{update.TotalSeasons}: {update.Mask}"
+                    : $"Season {update.SeasonNumber}/{update.TotalSeasons}: {update.MatchesFound} matching package(s).";
+            });
+            var packs = await client.SearchSeasonPacksAsync(title, progress, _operationCts.Token);
             SeasonPacks.Clear();
             foreach (var pack in packs) SeasonPacks.Add(pack);
             CountTextBlock.Text = $"{SeasonPacks.Count} packages";
             ProgressBar.Maximum = Math.Max(SeasonPacks.Count, 1);
             ProgressBar.Value = SeasonPacks.Count;
             StatusTextBlock.Text = SeasonPacks.Count == 0
-                ? "SubDL returned no English season packs for that series."
-                : $"SubDL returned {SeasonPacks.Count} English season pack(s). Tick the ZIP files you want to save.";
+                ? $"No package names matched {SubdlProClient.BuildSeasonMask(title.Name, 1)} through S15."
+                : $"Found {SeasonPacks.Count} package(s) matching the title.sNN. masks. Tick the ZIP files you want to save.";
         }
         catch (OperationCanceledException) { StatusTextBlock.Text = "Season-pack search cancelled."; }
         catch (Exception ex) { ShowError("Finding season packs failed", ex); }
@@ -97,7 +107,7 @@ public partial class MainWindow : Window
 
     private async void DownloadButton_Click(object sender, RoutedEventArgs e)
     {
-        var selected = SeasonPacks.Where(pack => pack.IsSelected).ToArray();
+        var selected = SeasonPacks.Where(pack => pack.IsSelected && pack.IsDownloadable).ToArray();
         if (selected.Length == 0)
         {
             ShowInfo("Tick one or more season packages first.", "Choose packages");

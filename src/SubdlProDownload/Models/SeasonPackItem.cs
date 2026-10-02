@@ -6,20 +6,31 @@ namespace SubdlProDownload.Models;
 public sealed class SeasonPackItem : INotifyPropertyChanged
 {
     private bool _isSelected;
-    private string _status = "Available";
+    private string _status;
 
-    public SeasonPackItem(string subtitleId, string seasonLabel, string packageName, string? sourceFileName)
+    public SeasonPackItem(string subtitleId, string seasonLabel, string packageName, string? sourceFileName, bool isDownloadable = true, string? status = null)
     {
         SubtitleId = subtitleId;
         SeasonLabel = seasonLabel;
         PackageName = packageName;
         SourceFileName = sourceFileName ?? "—";
+        IsDownloadable = isDownloadable;
+        _status = status ?? "Available";
     }
 
     public string SubtitleId { get; }
     public string SeasonLabel { get; }
     public string PackageName { get; }
     public string SourceFileName { get; }
+    public bool IsDownloadable { get; }
+
+    public static SeasonPackItem NotFound(int season, string mask) => new(
+        string.Empty,
+        $"Season {season}",
+        $"No match for {mask}",
+        "—",
+        isDownloadable: false,
+        status: "Not found");
 
     public bool IsSelected
     {

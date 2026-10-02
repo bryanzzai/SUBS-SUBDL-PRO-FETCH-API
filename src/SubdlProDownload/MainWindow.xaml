@@ -34,7 +34,7 @@
                 <Grid.ColumnDefinitions><ColumnDefinition Width="120"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="SubDL title"/>
                 <ComboBox x:Name="TitleResultsComboBox" Grid.Column="1" MinHeight="34" Margin="0,0,8,0" ItemsSource="{Binding TitleCandidates}" DisplayMemberPath="DisplayName" ToolTip="Choose the actual TV series from SubDL's results."/>
-                <Button x:Name="FindPacksButton" Grid.Column="2" Padding="14,7" Content="Find season packs" Click="FindPacksButton_Click"/>
+                <Button x:Name="FindPacksButton" Grid.Column="2" Padding="14,7" Content="Search all seasons" Click="FindPacksButton_Click"/>
             </Grid>
             <Grid Margin="0,0,0,8">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="120"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -47,14 +47,22 @@
                 <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="SubDL Pro API key"/>
                 <StackPanel Grid.Column="1">
                     <TextBox x:Name="ApiKeyTextBox" MinHeight="34" VerticalContentAlignment="Center" ToolTip="Paste a replacement API key here. Leave blank to use the saved key."/>
-                    <TextBlock Margin="0,4,0,0" Foreground="DimGray" FontSize="11" Text="Search → choose the real series → find the English season ZIP packages → tick the ones you want → download."/>
+                    <TextBlock Margin="0,4,0,0" Foreground="DimGray" FontSize="11" Text="Search → choose the real series → scan S01 through S15 using title.sNN. masks → tick the packages you want → download."/>
                 </StackPanel>
             </Grid>
         </StackPanel>
-        <TextBlock Grid.Row="2" Margin="0,0,0,8" Foreground="DimGray" Text="SubDL results. Tick the packages to keep; this first version stores each one as a ZIP and does not unpack it."/>
+        <TextBlock Grid.Row="2" Margin="0,0,0,8" Foreground="DimGray" Text="SubDL results matching the generated title.sNN. mask. Tick the packages to keep; each one is saved as a ZIP and never unpacked."/>
         <DataGrid x:Name="SeasonPackGrid" Grid.Row="3" ItemsSource="{Binding SeasonPacks}" AutoGenerateColumns="False" IsReadOnly="False" CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal" SelectionMode="Extended">
             <DataGrid.Columns>
-                <DataGridCheckBoxColumn Header="Download" Binding="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="90"/>
+                <DataGridTemplateColumn Header="Download" Width="90">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      IsEnabled="{Binding IsDownloadable}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="Season" Binding="{Binding SeasonLabel}" Width="120" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Package / release" Binding="{Binding PackageName}" Width="2.6*" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Source file" Binding="{Binding SourceFileName}" Width="2.1*" IsReadOnly="True"/>
