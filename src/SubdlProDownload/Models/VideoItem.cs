@@ -34,7 +34,7 @@ public sealed class VideoItem : INotifyPropertyChanged
     public bool HasSubtitle => !string.IsNullOrWhiteSpace(SubtitlePath);
 
     public string SubtitleDisplay => HasSubtitle
-        ? Path.GetFileName(SubtitlePath)
+        ? Path.GetFileName(SubtitlePath) ?? "Present"
         : "Missing";
 
     public string Status

@@ -259,8 +259,8 @@ public sealed class SubdlProClient : ISubtitleProvider
         if (string.IsNullOrWhiteSpace(releaseName)) return 0.50;
         var left = Tokenize(fileName);
         var right = Tokenize(releaseName);
-        if (left.Count == 0 || right.Count == 0) return 0.50;
-        return (double)left.Intersect(right, StringComparer.OrdinalIgnoreCase).Count() / Math.Max(left.Count, right.Count);
+        if (left.Length == 0 || right.Length == 0) return 0.50;
+        return (double)left.Intersect(right, StringComparer.OrdinalIgnoreCase).Count() / Math.Max(left.Length, right.Length);
     }
 
     private static string[] Tokenize(string value) => Regex.Split(value, @"[^A-Za-z0-9]+")
