@@ -13,6 +13,7 @@ namespace SubdlProDownload.Services;
 public sealed class SubdlProClient : IAsyncDisposable
 {
     public const int SeasonSearchLimit = 15;
+    public const int RawRowsPerSeasonLimit = 50;
     private static readonly Uri ApiBase = new("https://api.subdl.com/api/v2/");
     private readonly AppSettings _settings;
     private readonly HttpClient _client = new() { Timeout = TimeSpan.FromSeconds(60) };
@@ -54,6 +55,101 @@ public sealed class SubdlProClient : IAsyncDisposable
         return candidates;
     }
 
+    public async Task<IReadOnlyList<RawSubtitleRow>> SearchRawSeasonResultsAsync(
+        TitleCandidate title,
+        IProgress<RawSeasonSearchProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var rows = new List<RawSubtitleRow>();
+
+        for (var season = 1; season <= SeasonSearchLimit; season++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            progress?.Report(new RawSeasonSearchProgress(season, season - 1, SeasonSearchLimit, null));
+
+            var uri = new Uri(ApiBase,
+                $"subtitles/search?sd_id={Uri.EscapeDataString(title.SubdlId)}&languages=en&season={season}");
+            using var request = CreateRequest(HttpMethod.Get, uri);
+            using var response = await _client.SendAsync(request, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            var httpStatus = $"{(int)response.StatusCode} {response.ReasonPhrase}".Trim();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                rows.Add(new RawSubtitleRow(
+                    season, 0, "HTTP ERROR", httpStatus, "—", "—", "—", "—", "—",
+                    "SubDL returned a non-success response. No Not found conversion was performed.",
+                    Truncate(body, 1200)));
+                progress?.Report(new RawSeasonSearchProgress(season, season, SeasonSearchLimit, 0));
+                continue;
+            }
+
+            JsonDocument document;
+            try
+            {
+                document = JsonDocument.Parse(body);
+            }
+            catch (JsonException ex)
+            {
+                rows.Add(new RawSubtitleRow(
+                    season, 0, "INVALID JSON", httpStatus, "—", "—", "—", "—", "—",
+                    ex.Message,
+                    Truncate(body, 1200)));
+                progress?.Report(new RawSeasonSearchProgress(season, season, SeasonSearchLimit, 0));
+                continue;
+            }
+
+            using (document)
+            {
+                var root = document.RootElement;
+                var rootProperties = root.ValueKind == JsonValueKind.Object
+                    ? string.Join(", ", root.EnumerateObject().Select(property => property.Name))
+                    : $"root kind: {root.ValueKind}";
+
+                if (!root.TryGetProperty("subtitles", out var subtitles) || subtitles.ValueKind != JsonValueKind.Array)
+                {
+                    rows.Add(new RawSubtitleRow(
+                        season, 0, "NO subtitles[]", httpStatus, "—", "—", "—", "—", "—",
+                        $"Expected subtitles array was not present. Root properties: {rootProperties}",
+                        Truncate(body, 1200)));
+                    progress?.Report(new RawSeasonSearchProgress(season, season, SeasonSearchLimit, 0));
+                    continue;
+                }
+
+                var apiRowCount = subtitles.GetArrayLength();
+                var displayCount = Math.Min(apiRowCount, RawRowsPerSeasonLimit);
+                rows.Add(new RawSubtitleRow(
+                    season, 0, "SUMMARY", httpStatus, "—", "—", "—", "—", "—",
+                    $"API returned {apiRowCount} subtitle row(s); displaying {displayCount}. Root properties: {rootProperties}",
+                    "—"));
+
+                var index = 0;
+                foreach (var subtitle in subtitles.EnumerateArray())
+                {
+                    index++;
+                    if (index > RawRowsPerSeasonLimit) break;
+
+                    rows.Add(new RawSubtitleRow(
+                        season,
+                        index,
+                        "RAW",
+                        httpStatus,
+                        GetIdentifier(subtitle, "n_id") ?? GetIdentifier(subtitle, "nId") ?? GetIdentifier(subtitle, "id") ?? "—",
+                        GetString(subtitle, "release_name") ?? "—",
+                        GetString(subtitle, "name") ?? GetString(subtitle, "file_name") ?? "—",
+                        GetIdentifier(subtitle, "season") ?? GetIdentifier(subtitle, "season_number") ?? "—",
+                        GetIdentifier(subtitle, "episode") ?? GetIdentifier(subtitle, "episode_number") ?? "—",
+                        BuildKnownFieldSummary(subtitle),
+                        Truncate(subtitle.GetRawText(), 1200)));
+                }
+
+                progress?.Report(new RawSeasonSearchProgress(season, season, SeasonSearchLimit, apiRowCount));
+            }
+        }
+
+        return rows;
+    }
+
     public async Task<IReadOnlyList<SeasonPackItem>> SearchSeasonPacksAsync(
         TitleCandidate title,
         IProgress<SeasonSearchProgress>? progress,
@@ -66,8 +162,6 @@ public sealed class SubdlProClient : IAsyncDisposable
             var mask = BuildSeasonMask(title.Name, season);
             progress?.Report(new SeasonSearchProgress(season, season - 1, SeasonSearchLimit, mask, null));
 
-            // This intentionally asks for the season's normal subtitle list, not full_season=1.
-            // Many actual season archives are filed there under names such as justified.s01.
             var uri = new Uri(ApiBase,
                 $"subtitles/search?sd_id={Uri.EscapeDataString(title.SubdlId)}&languages=en&season={season}");
             using var request = CreateRequest(HttpMethod.Get, uri);
@@ -172,6 +266,16 @@ public sealed class SubdlProClient : IAsyncDisposable
         throw new HttpRequestException($"SubDL returned {(int)response.StatusCode} {response.ReasonPhrase}: {body}", null, response.StatusCode);
     }
 
+    private static string BuildKnownFieldSummary(JsonElement subtitle)
+    {
+        if (subtitle.ValueKind != JsonValueKind.Object) return $"JSON kind: {subtitle.ValueKind}";
+        var names = subtitle.EnumerateObject().Select(property => property.Name).ToArray();
+        return names.Length == 0 ? "No object fields" : "Fields: " + string.Join(", ", names);
+    }
+
+    private static string Truncate(string value, int length) =>
+        value.Length <= length ? value : value[..length] + "…";
+
     private static string GetSeasonLabel(JsonElement subtitle, string name)
     {
         var number = GetIdentifier(subtitle, "season") ?? GetIdentifier(subtitle, "season_number");
@@ -219,3 +323,9 @@ public sealed record SeasonSearchProgress(
     int TotalSeasons,
     string Mask,
     int? MatchesFound);
+
+public sealed record RawSeasonSearchProgress(
+    int SeasonNumber,
+    int SeasonsCompleted,
+    int TotalSeasons,
+    int? ApiRowsFound);
