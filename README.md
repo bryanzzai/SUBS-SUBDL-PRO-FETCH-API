@@ -1,22 +1,25 @@
 # SubDL Season Pack Download
 
-Windows desktop app for downloading **English season subtitle packages as ZIP files** through a user's own [SubDL Pro](https://subdl.com/) API key.
+Windows desktop app for inspecting and downloading **English TV subtitles** through a user's own [SubDL Pro](https://subdl.com/) API key.
 
-## Release 0.4.0: fixed S01–S15 search
+## Release 0.5.0: raw S01-S15 diagnostic scan
 
-This release deliberately does only this:
+This is deliberately a diagnostic release. Its purpose is to show what the SubDL API actually returns before any season-package filtering is applied.
 
-1. Search SubDL for a TV-series title, for example `Evil`.
+Workflow:
+
+1. Search SubDL for a TV-series title, for example `Justified`.
 2. Choose the actual series from the results dropdown.
-3. Search the normal English subtitle list for **every season S01 through S15**.
-4. Keep only entries whose release name matches the generated title mask—for example `justified.s01.`.
-5. Show an explicit **Not found** row for every season without a matching package.
-6. Tick the packages you want in the large result list.
-7. Choose an output folder and download the selected ZIP files.
+3. Run **Raw scan S01-S15**.
+4. The app requests the normal English subtitle list for every season S01 through S15.
+5. For each season it shows a **SUMMARY** row with the HTTP status and the number of rows returned by the API.
+6. It then shows up to **50 RAW rows per season**.
+7. Important fields such as subtitle ID, `release_name`, `name` / `file_name`, season and episode are shown in separate columns.
+8. The raw JSON for each displayed subtitle object is also shown.
 
-Nothing is guessed from local video filenames or a show's canonical season count. There is no library scan, episode matching, automatic extraction, or `.srt` sidecar creation in this version. Each selected package is retained exactly as a `.zip` file in the chosen folder.
+The 0.5.0 diagnostic view intentionally performs **no release-name mask filtering, no deduplication and no `Not found` conversion**. This makes it possible to see whether data is reaching the app before later matching logic is applied.
 
-SubDL's API supports TV-title search, `full_season=1` subtitle searches, and ZIP-format downloads; this app uses those three operations directly.
+ZIP download controls are hidden in this diagnostic build. The existing download code remains in the project for later releases.
 
 ## API key behaviour
 
