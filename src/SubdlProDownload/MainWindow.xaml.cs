@@ -16,7 +16,7 @@ public partial class MainWindow : Window
     public ObservableCollection<TitleCandidate> TitleCandidates { get; } = [];
     public ObservableCollection<SeasonPackItem> SeasonPacks { get; } = [];
     public ObservableCollection<RawSubtitleRow> RawRows { get; } = [];
-    public string ReleaseLabel => $"Release {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.5.0"}";
+    public string ReleaseLabel => $"Release {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.6.0"}";
 
     public MainWindow()
     {
@@ -26,7 +26,7 @@ public partial class MainWindow : Window
 
     private void BrowseOutputButton_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFolderDialog { Title = "Choose where to save season ZIP files", Multiselect = false };
+        var dialog = new OpenFolderDialog { Title = "Choose where to save subtitle ZIP files", Multiselect = false };
         if (!string.IsNullOrWhiteSpace(OutputFolderTextBox.Text) && Directory.Exists(OutputFolderTextBox.Text))
             dialog.InitialDirectory = OutputFolderTextBox.Text;
         if (dialog.ShowDialog(this) == true)
@@ -105,7 +105,7 @@ public partial class MainWindow : Window
             CountTextBlock.Text = $"{rawRows} raw rows + {diagnosticRows} diagnostics";
             ProgressBar.Maximum = SubdlProClient.SeasonSearchLimit;
             ProgressBar.Value = SubdlProClient.SeasonSearchLimit;
-            StatusTextBlock.Text = $"Raw scan complete: {summaryRows}/15 seasons returned a subtitles[] array. Up to {SubdlProClient.RawRowsPerSeasonLimit} rows per season are shown without filtering.";
+            StatusTextBlock.Text = $"Raw scan complete: {summaryRows}/15 seasons returned a subtitles[] array. Tick any raw rows you want to download as ZIP files.";
         }
         catch (OperationCanceledException) { StatusTextBlock.Text = "Raw season scan cancelled."; }
         catch (Exception ex) { ShowError("Raw SubDL scan failed", ex); }
@@ -114,17 +114,26 @@ public partial class MainWindow : Window
 
     private async void DownloadButton_Click(object sender, RoutedEventArgs e)
     {
-        var selected = SeasonPacks.Where(pack => pack.IsSelected && pack.IsDownloadable).ToArray();
+        var selected = RawRows.Where(row => row.IsSelected && row.IsDownloadable).ToArray();
         if (selected.Length == 0)
         {
-            ShowInfo("Download is intentionally hidden in the 0.5.0 diagnostic build.", "Diagnostic build");
+            ShowInfo("Tick one or more RAW subtitle rows first.", "Choose subtitles");
             return;
         }
 
         var outputFolder = OutputFolderTextBox.Text.Trim();
-        if (string.IsNullOrWhiteSpace(outputFolder)) return;
+        if (string.IsNullOrWhiteSpace(outputFolder))
+        {
+            ShowInfo("Choose a folder where the ZIP files should be saved.", "Choose destination folder");
+            return;
+        }
+
         if (!TryGetSettings(out var settings, out var savingNewKey)) return;
-        BeginOperation("Checking SubDL Pro credentials…");
+        BeginOperation($"Checking SubDL Pro credentials… 0/{selected.Length}");
+        ProgressBar.Maximum = selected.Length;
+        ProgressBar.Value = 0;
+        var failed = 0;
+
         try
         {
             Directory.CreateDirectory(outputFolder);
@@ -132,22 +141,52 @@ public partial class MainWindow : Window
             await client.InitializeAsync(_operationCts!.Token);
             SaveVerifiedKeyIfNeeded(settings, savingNewKey);
             var titleName = (TitleResultsComboBox.SelectedItem as TitleCandidate)?.Name ?? "SubDL";
-            foreach (var pack in selected)
+
+            for (var index = 0; index < selected.Length; index++)
             {
-                var destination = Path.Combine(outputFolder, BuildArchiveName(titleName, pack));
-                await client.DownloadSeasonPackAsync(pack, destination, _operationCts.Token);
+                var row = selected[index];
+                _operationCts.Token.ThrowIfCancellationRequested();
+                row.DownloadStatus = "Downloading ZIP…";
+                StatusTextBlock.Text = $"Downloading {index + 1}/{selected.Length}: S{row.QuerySeason:00} row {row.RowNumber}";
+
+                try
+                {
+                    var packageName = row.ReleaseName != "—" ? row.ReleaseName : row.SourceName;
+                    var pack = new SeasonPackItem(
+                        row.SubtitleId,
+                        $"Season {row.QuerySeason}",
+                        packageName,
+                        row.SourceName);
+                    var destination = Path.Combine(outputFolder, BuildArchiveName(titleName, row));
+                    await client.DownloadSeasonPackAsync(pack, destination, _operationCts.Token);
+                    row.DownloadStatus = "Saved ZIP";
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    failed++;
+                    row.DownloadStatus = "Failed: " + ex.Message;
+                }
+
+                ProgressBar.Value = index + 1;
             }
+
+            StatusTextBlock.Text = failed == 0
+                ? $"Finished. Saved {selected.Length} ZIP file(s)."
+                : $"Finished. Saved {selected.Length - failed}; {failed} failed. See Download status for details.";
         }
         catch (OperationCanceledException) { StatusTextBlock.Text = "ZIP download cancelled."; }
         catch (Exception ex) { ShowError("ZIP download failed", ex); }
         finally { EndOperation(); }
     }
 
-    private static string BuildArchiveName(string titleName, SeasonPackItem pack)
+    private static string BuildArchiveName(string titleName, RawSubtitleRow row)
     {
-        var name = $"{titleName} {pack.SeasonLabel} - {pack.SubtitleId}.zip";
+        var release = row.ReleaseName != "—" ? row.ReleaseName : row.SourceName;
+        var usefulRelease = string.IsNullOrWhiteSpace(release) || release == "—" ? "subtitle" : release;
+        var name = $"{titleName} S{row.QuerySeason:00} - {usefulRelease} - {row.SubtitleId}.zip";
         var invalid = Path.GetInvalidFileNameChars();
-        return new string(name.Select(character => invalid.Contains(character) ? '_' : character).ToArray());
+        var sanitized = new string(name.Select(character => invalid.Contains(character) ? '_' : character).ToArray());
+        return sanitized.Length <= 180 ? sanitized : sanitized[..180] + ".zip";
     }
 
     private bool TryGetSettings(out AppSettings settings, out bool savingNewKey)
@@ -189,7 +228,7 @@ public partial class MainWindow : Window
     {
         SearchTitlesButton.IsEnabled = true;
         FindPacksButton.IsEnabled = true;
-        DownloadButton.IsEnabled = false;
+        DownloadButton.IsEnabled = RawRows.Any(row => row.IsDownloadable);
         BrowseOutputButton.IsEnabled = true;
         TitleSearchTextBox.IsEnabled = true;
         TitleResultsComboBox.IsEnabled = true;
