@@ -15,6 +15,7 @@ public sealed class SubdlProClient : IAsyncDisposable
     public const int SeasonSearchLimit = 15;
     public const int RawRowsPerSeasonLimit = 50;
     private static readonly Uri ApiBase = new("https://api.subdl.com/api/v2/");
+    private static readonly Uri DownloadBase = new("https://api.subdl.com/");
     private readonly AppSettings _settings;
     private readonly HttpClient _client = new() { Timeout = TimeSpan.FromSeconds(60) };
 
@@ -76,10 +77,12 @@ public sealed class SubdlProClient : IAsyncDisposable
 
             if (!response.IsSuccessStatusCode)
             {
-                rows.Add(new RawSubtitleRow(
-                    season, 0, "HTTP ERROR", httpStatus, "—", "—", "—", "—", "—",
-                    "SubDL returned a non-success response. No Not found conversion was performed.",
-                    Truncate(body, 1200)));
+                rows.Add(DiagnosticRow(
+                    season,
+                    "HTTP ERROR",
+                    httpStatus,
+                    $"SubDL returned a non-success response for requested season {season}.",
+                    Truncate(MaskApiKey(body), 1200)));
                 progress?.Report(new RawSeasonSearchProgress(season, season, SeasonSearchLimit, 0));
                 continue;
             }
@@ -91,10 +94,12 @@ public sealed class SubdlProClient : IAsyncDisposable
             }
             catch (JsonException ex)
             {
-                rows.Add(new RawSubtitleRow(
-                    season, 0, "INVALID JSON", httpStatus, "—", "—", "—", "—", "—",
-                    ex.Message,
-                    Truncate(body, 1200)));
+                rows.Add(DiagnosticRow(
+                    season,
+                    "INVALID JSON",
+                    httpStatus,
+                    $"Season {season}: {ex.Message}",
+                    Truncate(MaskApiKey(body), 1200)));
                 progress?.Report(new RawSeasonSearchProgress(season, season, SeasonSearchLimit, 0));
                 continue;
             }
@@ -108,39 +113,46 @@ public sealed class SubdlProClient : IAsyncDisposable
 
                 if (!root.TryGetProperty("subtitles", out var subtitles) || subtitles.ValueKind != JsonValueKind.Array)
                 {
-                    rows.Add(new RawSubtitleRow(
-                        season, 0, "NO subtitles[]", httpStatus, "—", "—", "—", "—", "—",
-                        $"Expected subtitles array was not present. Root properties: {rootProperties}",
-                        Truncate(body, 1200)));
+                    rows.Add(DiagnosticRow(
+                        season,
+                        "NO subtitles[]",
+                        httpStatus,
+                        $"Season {season}: expected subtitles array was not present. Root properties: {rootProperties}",
+                        Truncate(MaskApiKey(body), 1200)));
                     progress?.Report(new RawSeasonSearchProgress(season, season, SeasonSearchLimit, 0));
                     continue;
                 }
 
                 var apiRowCount = subtitles.GetArrayLength();
-                var displayCount = Math.Min(apiRowCount, RawRowsPerSeasonLimit);
-                rows.Add(new RawSubtitleRow(
-                    season, 0, "SUMMARY", httpStatus, "—", "—", "—", "—", "—",
-                    $"API returned {apiRowCount} subtitle row(s); displaying {displayCount}. Root properties: {rootProperties}",
-                    "—"));
-
                 var index = 0;
                 foreach (var subtitle in subtitles.EnumerateArray())
                 {
                     index++;
                     if (index > RawRowsPerSeasonLimit) break;
 
+                    var subtitlePage = GetString(subtitle, "subtitlePage") ?? "—";
+                    var packageId = ExtractPackageId(subtitlePage)
+                        ?? GetIdentifier(subtitle, "n_id")
+                        ?? GetIdentifier(subtitle, "nId")
+                        ?? GetIdentifier(subtitle, "id")
+                        ?? "—";
+                    var downloadUrl = GetString(subtitle, "url") ?? "—";
+
                     rows.Add(new RawSubtitleRow(
                         season,
                         index,
                         "RAW",
                         httpStatus,
-                        GetIdentifier(subtitle, "n_id") ?? GetIdentifier(subtitle, "nId") ?? GetIdentifier(subtitle, "id") ?? "—",
+                        packageId,
+                        subtitlePage,
+                        downloadUrl,
+                        MaskApiKey(downloadUrl),
                         GetString(subtitle, "release_name") ?? "—",
                         GetString(subtitle, "name") ?? GetString(subtitle, "file_name") ?? "—",
-                        GetIdentifier(subtitle, "season") ?? GetIdentifier(subtitle, "season_number") ?? "—",
+                        GetIdentifier(subtitle, "season") ?? GetIdentifier(subtitle, "season_number") ?? season.ToString(),
                         GetIdentifier(subtitle, "episode") ?? GetIdentifier(subtitle, "episode_number") ?? "—",
                         BuildKnownFieldSummary(subtitle),
-                        Truncate(subtitle.GetRawText(), 1200)));
+                        Truncate(MaskApiKey(subtitle.GetRawText()), 1200)));
                 }
 
                 progress?.Report(new RawSeasonSearchProgress(season, season, SeasonSearchLimit, apiRowCount));
@@ -148,6 +160,46 @@ public sealed class SubdlProClient : IAsyncDisposable
         }
 
         return rows;
+    }
+
+    public async Task DownloadReturnedUrlAsync(string downloadUrl, string destinationPath, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(downloadUrl) || downloadUrl == "—")
+            throw new InvalidOperationException("SubDL did not return a download URL for this row.");
+
+        Uri uri;
+        if (Uri.TryCreate(downloadUrl, UriKind.Absolute, out var absoluteUri))
+        {
+            uri = absoluteUri;
+        }
+        else if (Uri.TryCreate(DownloadBase, downloadUrl, out var relativeUri))
+        {
+            uri = relativeUri;
+        }
+        else
+        {
+            throw new InvalidOperationException("SubDL returned a download URL that could not be parsed.");
+        }
+
+        using var request = CreateRequest(HttpMethod.Get, uri);
+        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        if (!IsZip(bytes))
+            throw new InvalidOperationException("SubDL download URL did not return a ZIP file.");
+
+        var directory = Path.GetDirectoryName(destinationPath);
+        if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
+        var temporaryPath = destinationPath + ".part";
+        try
+        {
+            await File.WriteAllBytesAsync(temporaryPath, bytes, cancellationToken);
+            File.Move(temporaryPath, destinationPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+        }
     }
 
     public async Task<IReadOnlyList<SeasonPackItem>> SearchSeasonPacksAsync(
@@ -238,6 +290,24 @@ public sealed class SubdlProClient : IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 
+    private static RawSubtitleRow DiagnosticRow(int season, string kind, string httpStatus, string details, string rawJson) =>
+        new(
+            season,
+            0,
+            kind,
+            httpStatus,
+            "—",
+            "—",
+            "—",
+            "—",
+            "—",
+            "—",
+            season.ToString(),
+            "—",
+            details,
+            rawJson,
+            "—");
+
     private async Task VerifyCredentialsAsync(CancellationToken cancellationToken)
     {
         using var request = CreateRequest(HttpMethod.Get, new Uri(ApiBase, "me"));
@@ -263,7 +333,7 @@ public sealed class SubdlProClient : IAsyncDisposable
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (response.StatusCode == HttpStatusCode.TooManyRequests)
             throw new HttpRequestException("SubDL quota reached. Check the quota indicator in your SubDL account.", null, response.StatusCode);
-        throw new HttpRequestException($"SubDL returned {(int)response.StatusCode} {response.ReasonPhrase}: {body}", null, response.StatusCode);
+        throw new HttpRequestException($"SubDL returned {(int)response.StatusCode} {response.ReasonPhrase}: {MaskApiKey(body)}", null, response.StatusCode);
     }
 
     private static string BuildKnownFieldSummary(JsonElement subtitle)
@@ -271,6 +341,19 @@ public sealed class SubdlProClient : IAsyncDisposable
         if (subtitle.ValueKind != JsonValueKind.Object) return $"JSON kind: {subtitle.ValueKind}";
         var names = subtitle.EnumerateObject().Select(property => property.Name).ToArray();
         return names.Length == 0 ? "No object fields" : "Fields: " + string.Join(", ", names);
+    }
+
+    private static string? ExtractPackageId(string subtitlePage)
+    {
+        if (string.IsNullOrWhiteSpace(subtitlePage) || subtitlePage == "—") return null;
+        var match = Regex.Match(subtitlePage, @"(?:^|/)s/info/(?<id>[^/?#]+)", RegexOptions.IgnoreCase);
+        return match.Success ? Uri.UnescapeDataString(match.Groups["id"].Value) : null;
+    }
+
+    private static string MaskApiKey(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return value;
+        return Regex.Replace(value, @"(?<=api_key=)[^&\"'\s}]+", "***", RegexOptions.IgnoreCase);
     }
 
     private static string Truncate(string value, int length) =>
