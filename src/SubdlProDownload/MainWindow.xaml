@@ -71,12 +71,11 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Package ID" Binding="{Binding PackageId}" Width="145" IsReadOnly="True"/>
-                <DataGridTextColumn Header="Download URL" Binding="{Binding DownloadUrlDisplay}" Width="2.3*" IsReadOnly="True"/>
-                <DataGridTextColumn Header="release_name" Binding="{Binding ReleaseName}" Width="2.2*" IsReadOnly="True"/>
-                <DataGridTextColumn Header="name / file_name" Binding="{Binding SourceName}" Width="2.0*" IsReadOnly="True"/>
+                <DataGridTextColumn Header="release_name" Binding="{Binding ReleaseName}" Width="2.4*" IsReadOnly="True"/>
                 <DataGridTextColumn Header="season" Binding="{Binding SeasonValue}" Width="70" IsReadOnly="True"/>
                 <DataGridTextColumn Header="episode" Binding="{Binding EpisodeValue}" Width="75" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Package ID" Binding="{Binding PackageId}" Width="145" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Download URL" Binding="{Binding DownloadUrlDisplay}" Width="2.5*" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Download status" Binding="{Binding DownloadStatus}" Width="175" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Details / fields" Binding="{Binding Details}" Width="2.1*" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Raw JSON" Binding="{Binding RawJson}" Width="3.0*" IsReadOnly="True"/>
