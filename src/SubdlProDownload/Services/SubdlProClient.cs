@@ -13,7 +13,7 @@ namespace SubdlProDownload.Services;
 public sealed class SubdlProClient : IAsyncDisposable
 {
     public const int SeasonSearchLimit = 15;
-    public const int RawRowsPerSeasonLimit = 50;
+    public const int RawRowsPerSeasonLimit = 100;
 
     private static readonly Uri ApiBase = new("https://api.subdl.com/api/v2/");
     private static readonly Uri DownloadBase = new("https://api.subdl.com/");
