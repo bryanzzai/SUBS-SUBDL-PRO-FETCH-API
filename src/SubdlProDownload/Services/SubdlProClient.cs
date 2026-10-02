@@ -97,9 +97,15 @@ public sealed class SubdlProClient : IAsyncDisposable
             progress?.Report(new SeasonSearchProgress(season, season, SeasonSearchLimit, mask, matchesThisSeason));
         }
 
-        return packs
+        var downloadablePacks = packs
+            .Where(pack => pack.IsDownloadable)
             .GroupBy(pack => pack.SubtitleId, StringComparer.Ordinal)
-            .Select(group => group.First())
+            .Select(group => group.First());
+
+        var notFoundRows = packs.Where(pack => !pack.IsDownloadable);
+
+        return downloadablePacks
+            .Concat(notFoundRows)
             .OrderBy(pack => SeasonSortKey(pack.SeasonLabel))
             .ThenBy(pack => pack.PackageName, StringComparer.OrdinalIgnoreCase)
             .ToArray();
