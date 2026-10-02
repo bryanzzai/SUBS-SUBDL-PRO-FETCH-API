@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Reflection;
 using System.Windows;
+using System.Windows.Data;
 using Microsoft.Win32;
 using SubdlProDownload.Configuration;
 using SubdlProDownload.Models;
@@ -16,12 +18,49 @@ public partial class MainWindow : Window
     public ObservableCollection<TitleCandidate> TitleCandidates { get; } = [];
     public ObservableCollection<SeasonPackItem> SeasonPacks { get; } = [];
     public ObservableCollection<RawSubtitleRow> RawRows { get; } = [];
-    public string ReleaseLabel => $"Release {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.7.0"}";
+    public ICollectionView RawRowsView { get; }
+    public string ReleaseLabel => $"Release {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0"}";
 
     public MainWindow()
     {
         InitializeComponent();
+        RawRowsView = CollectionViewSource.GetDefaultView(RawRows);
+        RawRowsView.Filter = FilterRawRow;
         DataContext = this;
+    }
+
+    private bool FilterRawRow(object item)
+    {
+        if (item is not RawSubtitleRow row) return false;
+
+        var filter = ResultsFilterTextBox?.Text.Trim();
+        if (string.IsNullOrWhiteSpace(filter)) return true;
+
+        return row.ReleaseName.Contains(filter, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ResultsFilterTextBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        RawRowsView?.Refresh();
+        UpdateVisibleRowCount();
+    }
+
+    private void UpdateVisibleRowCount()
+    {
+        var totalRows = RawRows.Count(row => row.IsRawRow);
+        var visibleRows = RawRowsView?.Cast<object>().Count(item => item is RawSubtitleRow row && row.IsRawRow) ?? totalRows;
+        var diagnosticRows = RawRows.Count - totalRows;
+
+        if (string.IsNullOrWhiteSpace(ResultsFilterTextBox?.Text))
+        {
+            CountTextBlock.Text = diagnosticRows == 0
+                ? $"{totalRows} rows"
+                : $"{totalRows} rows + {diagnosticRows} diagnostics";
+        }
+        else
+        {
+            CountTextBlock.Text = $"{visibleRows} of {totalRows} rows";
+        }
     }
 
     private void BrowseOutputButton_Click(object sender, RoutedEventArgs e)
@@ -56,7 +95,8 @@ public partial class MainWindow : Window
             TitleResultsComboBox.SelectedIndex = -1;
             RawRows.Clear();
             SeasonPacks.Clear();
-            CountTextBlock.Text = "0 rows";
+            RawRowsView.Refresh();
+            UpdateVisibleRowCount();
             ProgressBar.Value = 0;
             StatusTextBlock.Text = TitleCandidates.Count == 0
                 ? "No TV-series results found. Try a shorter title."
@@ -80,6 +120,7 @@ public partial class MainWindow : Window
         ProgressBar.Maximum = SubdlProClient.SeasonSearchLimit;
         ProgressBar.Value = 0;
         RawRows.Clear();
+        RawRowsView.Refresh();
 
         try
         {
@@ -98,15 +139,13 @@ public partial class MainWindow : Window
 
             var rows = await client.SearchRawSeasonResultsAsync(title, progress, _operationCts.Token);
             foreach (var row in rows) RawRows.Add(row);
+            RawRowsView.Refresh();
+            UpdateVisibleRowCount();
 
             var rawRows = RawRows.Count(row => row.IsRawRow);
-            var diagnosticRows = RawRows.Count - rawRows;
-            CountTextBlock.Text = diagnosticRows == 0
-                ? $"{rawRows} rows"
-                : $"{rawRows} rows + {diagnosticRows} diagnostics";
             ProgressBar.Maximum = SubdlProClient.SeasonSearchLimit;
             ProgressBar.Value = SubdlProClient.SeasonSearchLimit;
-            StatusTextBlock.Text = $"Scan complete. {rawRows} subtitle row(s) shown; up to {SubdlProClient.RawRowsPerSeasonLimit} per season. Tick the packages you want to download.";
+            StatusTextBlock.Text = $"Scan complete. {rawRows} subtitle row(s) retained; up to {SubdlProClient.RawRowsPerSeasonLimit} per season. Filter release_name or tick the packages you want to download.";
         }
         catch (OperationCanceledException) { StatusTextBlock.Text = "Season scan cancelled."; }
         catch (Exception ex) { ShowError("SubDL scan failed", ex); }
