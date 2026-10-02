@@ -1,11 +1,18 @@
+using SubdlProDownload.Models;
+
 namespace SubdlProDownload.Services;
 
 public interface ISubtitleProvider : IAsyncDisposable
 {
     Task InitializeAsync(CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<TitleCandidate>> SearchTitlesAsync(
+        string query,
+        CancellationToken cancellationToken);
+
     Task<SubtitleLookup> FindBestMatchAsync(
-        string videoPath,
+        VideoItem video,
+        TitleCandidate? selectedTitle,
         string language,
         CancellationToken cancellationToken);
 
@@ -24,4 +31,7 @@ public sealed record SubtitleMatch(
     string SubtitleId,
     string? SourceFileName,
     double Score,
-    string? ReleaseName);
+    string? ReleaseName,
+    string MatchKind,
+    int? ExpectedSeason,
+    int? ExpectedEpisode);

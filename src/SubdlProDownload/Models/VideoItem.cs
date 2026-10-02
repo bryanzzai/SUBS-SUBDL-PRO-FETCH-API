@@ -12,6 +12,11 @@ public sealed class VideoItem : INotifyPropertyChanged
     public required string FullPath { get; init; }
     public required string FileName { get; init; }
     public required string Folder { get; init; }
+    public required MediaIdentity Identity { get; init; }
+
+    public string DetectedMedia => Identity.IsEpisode
+        ? $"{Identity.Title} — {Identity.EpisodeDisplay}"
+        : Identity.Title;
 
     public string? SubtitlePath
     {

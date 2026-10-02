@@ -55,6 +55,7 @@ public sealed class LibraryScanner
                         FullPath = file,
                         FileName = Path.GetFileName(file),
                         Folder = current,
+                        Identity = MediaIdentityParser.Parse(file),
                         SubtitlePath = FindExistingSubtitle(file),
                         Status = "Ready"
                     });
