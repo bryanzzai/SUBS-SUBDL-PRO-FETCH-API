@@ -139,6 +139,8 @@ public sealed class SubdlProClient : IAsyncDisposable
                         ?? GetIdentifier(subtitle, "id")
                         ?? "—";
                     var downloadUrl = GetString(subtitle, "url") ?? "—";
+                    var isHearingImpaired = subtitle.TryGetProperty("hi", out var hiValue)
+                        && hiValue.ValueKind == JsonValueKind.True;
 
                     rows.Add(new RawSubtitleRow(
                         season,
@@ -153,6 +155,7 @@ public sealed class SubdlProClient : IAsyncDisposable
                         GetString(subtitle, "name") ?? GetString(subtitle, "file_name") ?? "—",
                         GetIdentifier(subtitle, "season") ?? GetIdentifier(subtitle, "season_number") ?? season.ToString(),
                         GetIdentifier(subtitle, "episode") ?? GetIdentifier(subtitle, "episode_number") ?? "—",
+                        isHearingImpaired,
                         BuildKnownFieldSummary(subtitle),
                         Truncate(MaskApiKey(subtitle.GetRawText()), 1200)));
                 }
@@ -220,6 +223,7 @@ public sealed class SubdlProClient : IAsyncDisposable
             "—",
             season.ToString(),
             "—",
+            false,
             details,
             rawJson,
             "—");
