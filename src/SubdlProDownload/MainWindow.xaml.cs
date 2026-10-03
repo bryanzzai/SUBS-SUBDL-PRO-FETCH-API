@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
@@ -11,14 +12,24 @@ namespace SubdlProDownload;
 
 public partial class MainWindow : Window
 {
+    private const int MaxTitleResultRows = 100;
     private CancellationTokenSource? _operationCts;
-    public string ReleaseLabel => $"Bulk {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.0"}";
+    private int _lastTitleSearchCalls;
+
+    public ObservableCollection<BulkTitleChoice> TitleChoices { get; } = [];
+    public string ReleaseLabel => $"Bulk {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.0.0"}";
 
     public MainWindow()
     {
         InitializeComponent();
         DataContext = this;
     }
+
+    private string[] ReadQueries() => SeriesListTextBox.Text
+        .Split(["\r\n", "\n", "\r"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
 
     private void BrowseOutputButton_Click(object sender, RoutedEventArgs e)
     {
@@ -29,17 +40,95 @@ public partial class MainWindow : Window
             OutputFolderTextBox.Text = dialog.FolderName;
     }
 
-    private async void RunBulkButton_Click(object sender, RoutedEventArgs e)
+    private async void SearchTitlesButton_Click(object sender, RoutedEventArgs e)
     {
-        var queries = SeriesListTextBox.Text
-            .Split(["\r\n", "\n", "\r"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
+        var queries = ReadQueries();
         if (queries.Length is < 1 or > 10)
         {
-            ShowInfo("Enter between 1 and 10 TV-series titles, one per line.", "Bulk input");
+            ShowInfo("Enter between 1 and 10 TV-series searches, one per line.", "Bulk input");
+            return;
+        }
+
+        if (!TryGetSettings(out var settings, out var savingNewKey)) return;
+
+        BeginOperation("Checking SubDL account and title-search quota…");
+        TitleChoices.Clear();
+        CountTextBlock.Text = "0 results";
+        ProgressBar.Maximum = queries.Length;
+        ProgressBar.Value = 0;
+        _lastTitleSearchCalls = 0;
+
+        try
+        {
+            await using var client = new SubdlProClient(settings);
+            await client.InitializeAsync(_operationCts!.Token);
+            SaveVerifiedKeyIfNeeded(settings, savingNewKey);
+
+            var usage = await client.GetAccountUsageAsync(_operationCts.Token);
+            if (usage.SearchRemaining < queries.Length)
+                throw new InvalidOperationException($"Title-search preflight failed: need {queries.Length} search request(s), but SubDL reports only {usage.SearchRemaining} remaining.");
+
+            var capped = false;
+            foreach (var query in queries)
+            {
+                _operationCts.Token.ThrowIfCancellationRequested();
+                StatusTextBlock.Text = $"Searching SubDL: {query}";
+
+                var candidates = await client.SearchTitlesAsync(query, _operationCts.Token);
+                _lastTitleSearchCalls++;
+                ProgressBar.Value = _lastTitleSearchCalls;
+
+                foreach (var candidate in candidates.Where(candidate => candidate.IsTvSeries))
+                {
+                    if (TitleChoices.Count >= MaxTitleResultRows)
+                    {
+                        capped = true;
+                        break;
+                    }
+
+                    TitleChoices.Add(new BulkTitleChoice(query, candidate));
+                }
+
+                if (capped) break;
+            }
+
+            CountTextBlock.Text = $"{TitleChoices.Count} result(s)";
+            StatusTextBlock.Text = capped
+                ? $"Title search stopped at the fixed {MaxTitleResultRows}-row cap. Tick any rows you want, or narrow the input and search again."
+                : $"Title search complete. {TitleChoices.Count} raw TV result(s) shown. Tick any series you want.";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusTextBlock.Text = "Title search cancelled.";
+        }
+        catch (Exception ex)
+        {
+            StatusTextBlock.Text = "Title search stopped.";
+            MessageBox.Show(this, ex.Message, "SubDL Bulk Download", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            EndOperation();
+        }
+    }
+
+    private void TitleCheckBox_Click(object sender, RoutedEventArgs e)
+    {
+        CountTextBlock.Text = $"{TitleChoices.Count} result(s), {TitleChoices.Count(choice => choice.IsSelected)} selected";
+        RunBulkButton.IsEnabled = TitleChoices.Any(choice => choice.IsSelected);
+    }
+
+    private async void RunBulkButton_Click(object sender, RoutedEventArgs e)
+    {
+        var selectedChoices = TitleChoices
+            .Where(choice => choice.IsSelected)
+            .GroupBy(choice => choice.SubdlId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToArray();
+
+        if (selectedChoices.Length == 0)
+        {
+            ShowInfo("Tick one or more SubDL series rows first.", "Choose series");
             return;
         }
 
@@ -52,9 +141,8 @@ public partial class MainWindow : Window
 
         if (!TryGetSettings(out var settings, out var savingNewKey)) return;
 
-        BeginOperation("Checking SubDL account and quota…");
-        LogTextBox.Clear();
-        ProgressBar.Maximum = queries.Length * (SubdlProClient.SeasonSearchLimit + 1);
+        BeginOperation("Checking full-load search quota…");
+        ProgressBar.Maximum = selectedChoices.Length * SubdlProClient.SeasonSearchLimit;
         ProgressBar.Value = 0;
 
         try
@@ -65,87 +153,60 @@ public partial class MainWindow : Window
             SaveVerifiedKeyIfNeeded(settings, savingNewKey);
 
             var before = await client.GetAccountUsageAsync(_operationCts.Token);
-            var plannedSearchCalls = queries.Length * (SubdlProClient.SeasonSearchLimit + 1);
-            AppendLog($"Plan: {before.PlanName}  Search remaining: {before.SearchRemaining}/{before.SearchLimit}  Downloads remaining: {before.DownloadsRemaining}/{before.DownloadsLimit}");
-            AppendLog($"Planned metadata bill: {plannedSearchCalls} search request(s) for {queries.Length} series.");
-
-            if (before.SearchRemaining < plannedSearchCalls)
-                throw new InvalidOperationException($"Full-load preflight failed: need {plannedSearchCalls} search requests, but SubDL reports only {before.SearchRemaining} remaining. Nothing was scanned or downloaded.");
+            var plannedSeasonSearchCalls = selectedChoices.Length * SubdlProClient.SeasonSearchLimit;
+            if (before.SearchRemaining < plannedSeasonSearchCalls)
+                throw new InvalidOperationException($"Full-load preflight failed: need {plannedSeasonSearchCalls} season-search request(s), but SubDL reports only {before.SearchRemaining} remaining. Nothing was scanned or downloaded.");
 
             var results = new List<BulkSeriesResult>();
-            var completedSearchCalls = 0;
+            var completedSeasonSearchCalls = 0;
 
-            foreach (var query in queries)
+            foreach (var choice in selectedChoices)
             {
                 _operationCts.Token.ThrowIfCancellationRequested();
-                StatusTextBlock.Text = $"Resolving {query}…";
-                AppendLog($"\n[{query}] title lookup");
-
-                var candidates = (await client.SearchTitlesAsync(query, _operationCts.Token))
-                    .Where(candidate => candidate.IsTvSeries)
-                    .ToArray();
-                completedSearchCalls++;
-                ProgressBar.Value = completedSearchCalls;
-
-                var exactMatches = candidates
-                    .Where(candidate => string.Equals(candidate.Name, query, StringComparison.OrdinalIgnoreCase))
-                    .ToArray();
-
-                TitleCandidate title;
-                if (exactMatches.Length == 1)
-                {
-                    title = exactMatches[0];
-                }
-                else if (candidates.Length == 1)
-                {
-                    title = candidates[0];
-                }
-                else
-                {
-                    var options = candidates.Length == 0
-                        ? "no TV results"
-                        : string.Join(" | ", candidates.Take(10).Select(candidate => candidate.DisplayName));
-                    throw new InvalidOperationException($"Ambiguous or unresolved title '{query}': {options}. Bulk run aborted before download.");
-                }
-
-                AppendLog($"[{query}] resolved -> {title.DisplayName} (sd_id {title.SubdlId})");
-
-                var titleBaseCalls = completedSearchCalls;
+                var title = choice.Candidate;
+                var baseCalls = completedSeasonSearchCalls;
                 var progress = new Progress<RawSeasonSearchProgress>(update =>
                 {
-                    ProgressBar.Value = Math.Min(ProgressBar.Maximum, titleBaseCalls + update.SeasonsCompleted);
-                    StatusTextBlock.Text = $"{title.Name}: season {update.SeasonNumber}/{update.TotalSeasons}";
+                    ProgressBar.Maximum = selectedChoices.Length * SubdlProClient.SeasonSearchLimit;
+                    ProgressBar.Value = Math.Min(ProgressBar.Maximum, baseCalls + update.SeasonsCompleted);
+                    StatusTextBlock.Text = $"{title.Name}: internal shovel pass S{update.SeasonNumber:00}/{update.TotalSeasons:00}";
                 });
 
                 var rows = await client.SearchRawSeasonResultsAsync(title, progress, _operationCts.Token);
-                completedSearchCalls += SubdlProClient.SeasonSearchLimit;
-                ProgressBar.Value = completedSearchCalls;
-                var rawCount = rows.Count(row => row.IsRawRow);
-                var downloadableCount = rows.Count(row => row.IsRawRow && row.HasDownloadUrl);
-                AppendLog($"[{query}] metadata rows: {rawCount}; downloadable ZIP rows: {downloadableCount}");
-                results.Add(new BulkSeriesResult(query, title, rows));
+                completedSeasonSearchCalls += SubdlProClient.SeasonSearchLimit;
+                ProgressBar.Value = completedSeasonSearchCalls;
+                results.Add(new BulkSeriesResult(choice.Query, title, rows));
             }
 
             var diagnosticRows = results.SelectMany(result => result.Rows).Where(row => !row.IsRawRow).ToArray();
             var beforeDownload = await client.GetAccountUsageAsync(_operationCts.Token);
             var downloadRows = results
-                .SelectMany(result => result.Rows.Where(row => row.IsRawRow && row.HasDownloadUrl).Select(row => new BulkDownloadItem(result, row)))
+                .SelectMany(result => result.Rows
+                    .Where(row => row.IsRawRow && row.HasDownloadUrl)
+                    .Select(row => new BulkDownloadItem(result, row)))
                 .ToArray();
 
-            AppendLog($"\nMetadata phase complete. Search requests used by this run: {completedSearchCalls}.");
-            AppendLog($"Full download bill: {downloadRows.Length} ZIP download(s).");
-            AppendLog($"Quota now: search {beforeDownload.SearchRemaining}/{beforeDownload.SearchLimit} remaining; downloads {beforeDownload.DownloadsRemaining}/{beforeDownload.DownloadsLimit} remaining.");
-
             var manifestPath = Path.Combine(outputFolder, $"subdl-bulk-manifest-{DateTime.Now:yyyyMMdd-HHmmss}.json");
-            await WriteManifestAsync(manifestPath, queries, results, before, beforeDownload, null, completedSearchCalls, 0, 0, _operationCts.Token);
-            AppendLog($"Metadata manifest written: {manifestPath}");
+            await WriteManifestAsync(
+                manifestPath,
+                selectedChoices,
+                results,
+                before,
+                beforeDownload,
+                null,
+                _lastTitleSearchCalls,
+                completedSeasonSearchCalls,
+                0,
+                0,
+                _operationCts.Token);
 
             if (diagnosticRows.Length > 0)
-                throw new InvalidOperationException($"Metadata scan returned {diagnosticRows.Length} diagnostic/error row(s). Full-load rule stops before download. Inspect the manifest.");
+                throw new InvalidOperationException($"Metadata scan returned {diagnosticRows.Length} diagnostic/error row(s). Full-load rule stops before download. Manifest: {manifestPath}");
 
             if (beforeDownload.DownloadsRemaining < downloadRows.Length)
-                throw new InvalidOperationException($"Full-load preflight failed: need {downloadRows.Length} downloads, but SubDL reports only {beforeDownload.DownloadsRemaining} remaining. Metadata is saved; no ZIP downloads were started.");
+                throw new InvalidOperationException($"Full-load preflight failed: need {downloadRows.Length} downloads, but SubDL reports only {beforeDownload.DownloadsRemaining} remaining. Metadata is saved; no ZIP downloads were started. Manifest: {manifestPath}");
 
+            StatusTextBlock.Text = $"Bill approved: {downloadRows.Length} ZIP(s). Starting full load.";
             ProgressBar.Maximum = Math.Max(1, downloadRows.Length);
             ProgressBar.Value = 0;
             var attempted = 0;
@@ -171,30 +232,37 @@ public partial class MainWindow : Window
                 {
                     failed++;
                     item.Row.DownloadStatus = "Failed: " + ex.Message;
-                    AppendLog($"DOWNLOAD FAILED: {item.Series.Title.Name} / {item.Row.ReleaseName}: {ex.Message}");
                 }
 
                 ProgressBar.Value = attempted;
             }
 
             var after = await client.GetAccountUsageAsync(_operationCts.Token);
-            await WriteManifestAsync(manifestPath, queries, results, before, beforeDownload, after, completedSearchCalls, attempted, failed, _operationCts.Token, downloadRows);
+            await WriteManifestAsync(
+                manifestPath,
+                selectedChoices,
+                results,
+                before,
+                beforeDownload,
+                after,
+                _lastTitleSearchCalls,
+                completedSeasonSearchCalls,
+                attempted,
+                failed,
+                _operationCts.Token,
+                downloadRows);
 
-            AppendLog($"\nDONE. Search calls: {completedSearchCalls}. Downloads attempted: {attempted}. Saved: {attempted - failed}. Failed: {failed}.");
-            AppendLog($"Quota after: search {after.SearchRemaining}/{after.SearchLimit}; downloads {after.DownloadsRemaining}/{after.DownloadsLimit}.");
             StatusTextBlock.Text = failed == 0
-                ? $"Bulk load complete: {attempted} ZIP file(s) saved."
-                : $"Bulk load complete with {failed} failed download(s). See log and manifest.";
+                ? $"Bulk load complete. {attempted} ZIP(s) saved. Search bill: {_lastTitleSearchCalls + completedSeasonSearchCalls}; download bill: {attempted}."
+                : $"Bulk load complete with {failed} failed download(s). Saved {attempted - failed}/{attempted}. Manifest: {manifestPath}";
         }
         catch (OperationCanceledException)
         {
             StatusTextBlock.Text = "Bulk run cancelled.";
-            AppendLog("\nCANCELLED.");
         }
         catch (Exception ex)
         {
             StatusTextBlock.Text = "Bulk run stopped.";
-            AppendLog("\nSTOPPED: " + ex.Message);
             MessageBox.Show(this, ex.Message, "SubDL Bulk Download", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         finally
@@ -205,12 +273,13 @@ public partial class MainWindow : Window
 
     private static async Task WriteManifestAsync(
         string path,
-        IReadOnlyList<string> queries,
+        IReadOnlyList<BulkTitleChoice> selectedChoices,
         IReadOnlyList<BulkSeriesResult> results,
         SubdlAccountUsage before,
         SubdlAccountUsage beforeDownload,
         SubdlAccountUsage? after,
-        int searchCalls,
+        int titleSearchCalls,
+        int seasonSearchCalls,
         int downloadAttempts,
         int failedDownloads,
         CancellationToken cancellationToken,
@@ -223,21 +292,30 @@ public partial class MainWindow : Window
         var manifest = new
         {
             generated_at = DateTimeOffset.Now,
-            input_series = queries,
+            selected_series = selectedChoices.Select(choice => new
+            {
+                input = choice.Query,
+                choice.Name,
+                choice.Year,
+                choice.SubdlId,
+                choice.ImdbId
+            }),
             bill = new
             {
-                search_requests = searchCalls,
+                title_search_requests = titleSearchCalls,
+                season_search_requests = seasonSearchCalls,
+                total_search_requests = titleSearchCalls + seasonSearchCalls,
                 download_candidates = results.SelectMany(result => result.Rows).Count(row => row.IsRawRow && row.HasDownloadUrl),
                 download_attempts = downloadAttempts,
                 download_failures = failedDownloads
             },
-            quota_before = before,
+            quota_before_scan = before,
             quota_before_download = beforeDownload,
             quota_after = after,
             series = results.Select(result => new
             {
                 input = result.Query,
-                resolved = new { result.Title.Name, result.Title.Year, result.Title.SubdlId, result.Title.ImdbId },
+                selected = new { result.Title.Name, result.Title.Year, result.Title.SubdlId, result.Title.ImdbId },
                 rows = result.Rows.Select(row => new
                 {
                     row.QuerySeason,
@@ -300,21 +378,17 @@ public partial class MainWindow : Window
         ApiKeyTextBox.Clear();
     }
 
-    private void AppendLog(string message)
-    {
-        LogTextBox.AppendText(message + Environment.NewLine);
-        LogTextBox.ScrollToEnd();
-    }
-
     private void CancelButton_Click(object sender, RoutedEventArgs e) => _operationCts?.Cancel();
 
     private void BeginOperation(string status)
     {
         _operationCts?.Dispose();
         _operationCts = new CancellationTokenSource();
+        SearchTitlesButton.IsEnabled = false;
         RunBulkButton.IsEnabled = false;
         BrowseOutputButton.IsEnabled = false;
         SeriesListTextBox.IsEnabled = false;
+        TitleResultsGrid.IsEnabled = false;
         OutputFolderTextBox.IsEnabled = false;
         ApiKeyTextBox.IsEnabled = false;
         CancelButton.IsEnabled = true;
@@ -323,9 +397,11 @@ public partial class MainWindow : Window
 
     private void EndOperation()
     {
-        RunBulkButton.IsEnabled = true;
+        SearchTitlesButton.IsEnabled = true;
+        RunBulkButton.IsEnabled = TitleChoices.Any(choice => choice.IsSelected);
         BrowseOutputButton.IsEnabled = true;
         SeriesListTextBox.IsEnabled = true;
+        TitleResultsGrid.IsEnabled = true;
         OutputFolderTextBox.IsEnabled = true;
         ApiKeyTextBox.IsEnabled = true;
         CancelButton.IsEnabled = false;
