@@ -2,13 +2,14 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="SubDL Bulk Download"
-        Height="850"
-        Width="1150"
-        MinHeight="700"
-        MinWidth="900"
+        Height="900"
+        Width="1250"
+        MinHeight="720"
+        MinWidth="950"
         WindowStartupLocation="CenterScreen">
     <Grid Margin="20">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -19,17 +20,17 @@
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
                 <TextBlock Text="SubDL Bulk Download" FontSize="28" FontWeight="SemiBold"/>
-                <TextBlock Margin="0,4,0,16" Foreground="DimGray" Text="Up to 10 TV series. Scan everything first, check the full bill, then download the entire load or nothing."/>
+                <TextBlock Margin="0,4,0,16" Foreground="DimGray" Text="Search raw TV-title candidates, tick any series you want, then shovel the full subtitle load for every selected series."/>
             </StackPanel>
             <TextBlock Grid.Column="1" VerticalAlignment="Top" Foreground="DimGray" FontSize="11" Text="{Binding ReleaseLabel}"/>
         </Grid>
 
-        <StackPanel Grid.Row="1" Margin="0,0,0,14">
+        <StackPanel Grid.Row="1" Margin="0,0,0,12">
             <Grid Margin="0,0,0,8">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="125"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" VerticalAlignment="Top" Margin="0,7,0,0" Text="TV series"/>
-                <TextBox x:Name="SeriesListTextBox" Grid.Column="1" Height="170" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap" Margin="0,0,8,0" ToolTip="One TV-series title per line. Maximum 10."/>
-                <TextBlock Grid.Column="2" Width="210" Margin="8,4,0,0" Foreground="DimGray" TextWrapping="Wrap" Text="One series per line. Duplicate input names are collapsed. Ambiguous SubDL title matches abort the run before any downloads."/>
+                <TextBox x:Name="SeriesListTextBox" Grid.Column="1" Height="150" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap" Margin="0,0,8,0" ToolTip="One free-text SubDL title search per line. Maximum 10."/>
+                <Button x:Name="SearchTitlesButton" Grid.Column="2" Width="150" Padding="14,7" VerticalAlignment="Bottom" Content="Search SubDL" Click="SearchTitlesButton_Click"/>
             </Grid>
 
             <Grid Margin="0,0,0,8">
@@ -46,16 +47,47 @@
             </Grid>
         </StackPanel>
 
-        <TextBox x:Name="LogTextBox" Grid.Row="2" IsReadOnly="True" FontFamily="Consolas" FontSize="13" AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+        <TextBlock Grid.Row="2" Margin="0,0,0,8" Foreground="DimGray" Text="Raw title search results. Up to 100 rows are shown. Tick one, several, duplicates, or none; the program does not resolve titles for you."/>
 
-        <Grid Grid.Row="3" Margin="0,14,0,0">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <DataGrid x:Name="TitleResultsGrid"
+                  Grid.Row="3"
+                  ItemsSource="{Binding TitleChoices}"
+                  AutoGenerateColumns="False"
+                  CanUserAddRows="False"
+                  IsReadOnly="False"
+                  HeadersVisibility="Column"
+                  GridLinesVisibility="Horizontal"
+                  SelectionMode="Extended"
+                  EnableRowVirtualization="True">
+            <DataGrid.Columns>
+                <DataGridTemplateColumn Header="Download" Width="85" IsReadOnly="False">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <CheckBox HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"
+                                      IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      Click="TitleCheckBox_Click"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Search input" Binding="{Binding Query}" Width="220" IsReadOnly="True"/>
+                <DataGridTextColumn Header="SubDL title" Binding="{Binding Name}" Width="*" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Year" Binding="{Binding Year}" Width="90" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="90" IsReadOnly="True"/>
+                <DataGridTextColumn Header="sd_id" Binding="{Binding SubdlId}" Width="150" IsReadOnly="True"/>
+                <DataGridTextColumn Header="IMDb" Binding="{Binding ImdbId}" Width="130" IsReadOnly="True"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <Grid Grid.Row="4" Margin="0,14,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
-                <TextBlock x:Name="StatusTextBlock" Text="Enter 1-10 TV series, choose a destination, then run the full load."/>
+                <TextBlock x:Name="StatusTextBlock" Text="Enter 1-10 TV-series searches and press Search SubDL."/>
                 <ProgressBar x:Name="ProgressBar" Margin="0,6,12,0" Height="6" Minimum="0" Maximum="1" Value="0"/>
             </StackPanel>
-            <Button x:Name="RunBulkButton" Grid.Column="1" Padding="16,7" Margin="0,0,8,0" Content="Run full bulk load" Click="RunBulkButton_Click"/>
-            <Button x:Name="CancelButton" Grid.Column="2" Padding="14,7" Content="Cancel" IsEnabled="False" Click="CancelButton_Click"/>
+            <TextBlock x:Name="CountTextBlock" Grid.Column="1" Margin="16,0" VerticalAlignment="Center" Foreground="DimGray" Text="0 results"/>
+            <Button x:Name="RunBulkButton" Grid.Column="2" Padding="16,7" Margin="0,0,8,0" Content="Download selected series" Click="RunBulkButton_Click" IsEnabled="False"/>
+            <Button x:Name="CancelButton" Grid.Column="3" Padding="14,7" Content="Cancel" IsEnabled="False" Click="CancelButton_Click"/>
         </Grid>
     </Grid>
 </Window>
