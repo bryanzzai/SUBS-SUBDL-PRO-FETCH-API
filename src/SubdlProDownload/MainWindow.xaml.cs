@@ -1,8 +1,10 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Data;
 using Microsoft.Win32;
 using SubdlProDownload.Configuration;
 using SubdlProDownload.Models;
@@ -12,17 +14,48 @@ namespace SubdlProDownload;
 
 public partial class MainWindow : Window
 {
-    private const int MaxTitleResultRows = 100;
+    private const int MaxTitleResultRows = 200;
     private CancellationTokenSource? _operationCts;
     private int _lastTitleSearchCalls;
 
     public ObservableCollection<BulkTitleChoice> TitleChoices { get; } = [];
+    public ICollectionView TitleChoicesView { get; private set; } = null!;
     public string ReleaseLabel => $"Bulk {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.0.0"}";
 
     public MainWindow()
     {
         InitializeComponent();
+        TitleChoicesView = CollectionViewSource.GetDefaultView(TitleChoices);
+        TitleChoicesView.Filter = FilterTitleChoice;
+        TitleChoicesView.SortDescriptions.Add(new SortDescription(nameof(BulkTitleChoice.Name), ListSortDirection.Ascending));
         DataContext = this;
+    }
+
+    private bool FilterTitleChoice(object item)
+    {
+        if (item is not BulkTitleChoice choice) return false;
+
+        var filter = ResultsFilterTextBox?.Text.Trim();
+        if (string.IsNullOrWhiteSpace(filter)) return true;
+
+        return choice.Name.Contains(filter, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ResultsFilterTextBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        TitleChoicesView?.Refresh();
+        UpdateResultCount();
+    }
+
+    private void UpdateResultCount()
+    {
+        var total = TitleChoices.Count;
+        var visible = TitleChoicesView?.Cast<object>().Count(item => item is BulkTitleChoice) ?? total;
+        var selected = TitleChoices.Count(choice => choice.IsSelected);
+
+        CountTextBlock.Text = string.IsNullOrWhiteSpace(ResultsFilterTextBox?.Text)
+            ? $"{total} result(s), {selected} selected"
+            : $"{visible} of {total} result(s), {selected} selected";
     }
 
     private string[] ReadQueries() => SeriesListTextBox.Text
@@ -53,7 +86,8 @@ public partial class MainWindow : Window
 
         BeginOperation("Checking SubDL account and title-search quota…");
         TitleChoices.Clear();
-        CountTextBlock.Text = "0 results";
+        TitleChoicesView.Refresh();
+        UpdateResultCount();
         ProgressBar.Maximum = queries.Length;
         ProgressBar.Value = 0;
         _lastTitleSearchCalls = 0;
@@ -92,10 +126,11 @@ public partial class MainWindow : Window
                 if (capped) break;
             }
 
-            CountTextBlock.Text = $"{TitleChoices.Count} result(s)";
+            TitleChoicesView.Refresh();
+            UpdateResultCount();
             StatusTextBlock.Text = capped
                 ? $"Title search stopped at the fixed {MaxTitleResultRows}-row cap. Tick any rows you want, or narrow the input and search again."
-                : $"Title search complete. {TitleChoices.Count} raw TV result(s) shown. Tick any series you want.";
+                : $"Title search complete. {TitleChoices.Count} raw TV result(s) retained. Tick any series you want.";
         }
         catch (OperationCanceledException)
         {
@@ -114,7 +149,7 @@ public partial class MainWindow : Window
 
     private void TitleCheckBox_Click(object sender, RoutedEventArgs e)
     {
-        CountTextBlock.Text = $"{TitleChoices.Count} result(s), {TitleChoices.Count(choice => choice.IsSelected)} selected";
+        UpdateResultCount();
         RunBulkButton.IsEnabled = TitleChoices.Any(choice => choice.IsSelected);
     }
 
@@ -389,6 +424,7 @@ public partial class MainWindow : Window
         BrowseOutputButton.IsEnabled = false;
         SeriesListTextBox.IsEnabled = false;
         TitleResultsGrid.IsEnabled = false;
+        ResultsFilterTextBox.IsEnabled = false;
         OutputFolderTextBox.IsEnabled = false;
         ApiKeyTextBox.IsEnabled = false;
         CancelButton.IsEnabled = true;
@@ -402,6 +438,7 @@ public partial class MainWindow : Window
         BrowseOutputButton.IsEnabled = true;
         SeriesListTextBox.IsEnabled = true;
         TitleResultsGrid.IsEnabled = true;
+        ResultsFilterTextBox.IsEnabled = true;
         OutputFolderTextBox.IsEnabled = true;
         ApiKeyTextBox.IsEnabled = true;
         CancelButton.IsEnabled = false;
