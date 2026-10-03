@@ -40,18 +40,29 @@
                 <Button x:Name="BrowseOutputButton" Grid.Column="2" Padding="14,7" Content="Choose folder…" Click="BrowseOutputButton_Click"/>
             </Grid>
 
-            <Grid>
+            <Grid Margin="0,0,0,8">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="125"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="SubDL Pro API key"/>
                 <TextBox x:Name="ApiKeyTextBox" Grid.Column="1" MinHeight="34" VerticalContentAlignment="Center" ToolTip="Paste a replacement API key here. Leave blank to use the saved key."/>
             </Grid>
+
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="125"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Filter title"/>
+                <TextBox x:Name="ResultsFilterTextBox"
+                         Grid.Column="1"
+                         MinHeight="34"
+                         VerticalContentAlignment="Center"
+                         TextChanged="ResultsFilterTextBox_TextChanged"
+                         ToolTip="Live free-text filter against the returned SubDL title name only."/>
+            </Grid>
         </StackPanel>
 
-        <TextBlock Grid.Row="2" Margin="0,0,0,8" Foreground="DimGray" Text="Raw title search results. Up to 100 rows are shown. Tick one, several, duplicates, or none; the program does not resolve titles for you."/>
+        <TextBlock Grid.Row="2" Margin="0,0,0,8" Foreground="DimGray" Text="Raw title search results. Up to 200 rows are retained, sorted alphabetically by SubDL title. Tick one, several, duplicates, or none; the program does not resolve titles for you."/>
 
         <DataGrid x:Name="TitleResultsGrid"
                   Grid.Row="3"
-                  ItemsSource="{Binding TitleChoices}"
+                  ItemsSource="{Binding TitleChoicesView}"
                   AutoGenerateColumns="False"
                   CanUserAddRows="False"
                   IsReadOnly="False"
