@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [ main, subdl-pro-dl-ver-1.x.x, subdl-bulk-download ]
+    branches: [ main, subdl-series-download, subdl-bulk-download ]
   pull_request:
     branches: [ main ]
 
