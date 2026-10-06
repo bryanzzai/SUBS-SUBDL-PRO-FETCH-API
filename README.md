@@ -4,7 +4,7 @@ Windows desktop app for inspecting and downloading **English TV subtitles** thro
 
 ## Release 1.0.0
 
-Version 1.0.0 lives on branch `subdl-pro-dl-ver-1.x.x`. The previous 0.8.0 line remains intact on `main`.
+Version 1.0.0 lives on branch `subdl-series-download`. The previous 0.8.0 line remains intact on `main`.
 
 Workflow:
 
@@ -48,7 +48,7 @@ Requirements:
 Run from source:
 
 ```powershell
-git switch subdl-pro-dl-ver-1.x.x
+git switch subdl-series-download
 dotnet run --project .\src\SubdlProDownload\SubdlProDownload.csproj -c Release
 ```
 
